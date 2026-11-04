@@ -35,3 +35,18 @@ The database and provider credentials in the ignored `.env` have not been printe
 - Verify migrations and queue/source SQL on a disposable PostgreSQL database before using Render.
 - Add the worker ingestion handler, local E5 embeddings, passage persistence, and retrieval eligibility checks; current approval requires ready passages and therefore cannot complete a real upload until ingestion exists.
 - Complete draft submission, review findings, reviewer follow-ups, and frontend integration.
+
+## 2026-11-04 — Round 2 backend workflow code
+
+- Added a polling worker with separate handlers for source ingestion, initial review, and reviewer follow-up questions. Exhausted job leases now mark their resource failed instead of leaving it processing indefinitely.
+- Added local multilingual E5 embedding code with a pinned model revision, tenant-scoped approved-source dense and BM25 retrieval, reciprocal-rank fusion, and deterministic follow-up routing. The model weights have not been downloaded or run in this environment.
+- Added Creator draft/revision routes, reviewer review/comment/question/decision routes, and retry handling. Human decisions remain separate from model output.
+- Added a server-side Sarvam V2 structured JSON adapter. Initial review and follow-up handlers snapshot selected evidence before answer generation, validate exact passage IDs and source quotes, and persist citations only after validation. The user explicitly approved sending bounded private draft, guidance, finding, and recent chat context to Sarvam for these review and follow-up calls. No live Sarvam request was made during this implementation.
+- Corrected worker and citation-read SQL to use the migration's `organisations.time_zone` column. Citation status now uses the organisation's local date.
+- Verified 110 backend tests, Ruff across `app` and `tests`, `pip check`, and `git diff --check`. A local API smoke test returned `200` for `/healthz` and `/openapi.json`, and `401` for an unauthenticated review request. The local API process was stopped after testing.
+
+### Remaining integration gates
+
+- Run Alembic migrations and the Creator → Reviewer → worker flow against a disposable PostgreSQL database with pgvector; this environment has no running disposable PostgreSQL instance. Do not use Render production for this test.
+- Install and exercise the pinned E5 model, and run a bounded structured-output smoke test against the selected Sarvam model. Test private R2 access with a test bucket or disposable object.
+- Build the frontend and verify the full browser journey. No deployment or live Render migration has been performed.

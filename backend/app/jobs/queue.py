@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Collection, Literal
 from uuid import UUID
 
 from sqlalchemy import text
@@ -59,24 +59,27 @@ def claim_job(
     worker_id: str,
     lease_seconds: int = 300,
     max_attempts: int = 5,
+    allowed_kinds: Collection[JobKind] | None = None,
 ) -> Job | None:
     """Claim a due job or reclaim an expired lease without blocking peers."""
     if not worker_id or len(worker_id) > 200:
         raise ValueError("worker_id must contain 1 to 200 characters")
     if lease_seconds < 1 or max_attempts < 1:
         raise ValueError("lease_seconds and max_attempts must be positive")
+    if allowed_kinds is not None:
+        allowed_kinds = tuple(sorted(set(allowed_kinds)))
+        if not allowed_kinds or any(kind not in _JOB_KINDS for kind in allowed_kinds):
+            raise ValueError("allowed_kinds must contain supported job kinds")
+    candidate_kind_filter = " AND kind = ANY(:allowed_kinds)" if allowed_kinds is not None else ""
+    params = {"worker_id": worker_id, "lease_seconds": lease_seconds, "max_attempts": max_attempts}
+    if allowed_kinds is not None:
+        params["allowed_kinds"] = list(allowed_kinds)
     row = db.execute(text("""
-        WITH exhausted AS (
-            UPDATE jobs
-            SET state = 'failed', worker_id = NULL, lease_until = NULL,
-                last_error_code = COALESCE(last_error_code, 'attempts_exhausted'),
-                updated_at = now()
-            WHERE state = 'running' AND lease_until <= now() AND attempts >= :max_attempts
-            RETURNING id
-        ), candidate AS (
+        WITH candidate AS (
             SELECT id
             FROM jobs
             WHERE attempts < :max_attempts
+              {candidate_kind_filter}
               AND ((state = 'queued' AND run_after <= now())
                    OR (state = 'running' AND lease_until <= now()))
             ORDER BY run_after, id
@@ -91,8 +94,35 @@ def claim_job(
         WHERE j.id = candidate.id
         RETURNING j.id, j.org_id, j.kind, j.resource_id, j.state, j.attempts,
                   j.run_after, j.lease_until, j.worker_id, j.last_error_code
-    """), {"worker_id": worker_id, "lease_seconds": lease_seconds, "max_attempts": max_attempts}).mappings().first()
+    """.format(candidate_kind_filter=candidate_kind_filter)), params).mappings().first()
     return _job(row)
+
+
+def fail_exhausted_leases(
+    db: Session, *, allowed_kinds: Collection[JobKind], max_attempts: int = 5, limit: int = 20,
+) -> list[Job]:
+    """Fail expired final attempts so the worker can fail their resources too."""
+    kinds = tuple(sorted(set(allowed_kinds)))
+    if not kinds or any(kind not in _JOB_KINDS for kind in kinds):
+        raise ValueError("allowed_kinds must contain supported job kinds")
+    if max_attempts < 1 or not 1 <= limit <= 100:
+        raise ValueError("invalid exhausted-lease sweep limits")
+    rows = db.execute(text("""
+        WITH candidates AS (
+            SELECT id FROM jobs
+            WHERE kind = ANY(:allowed_kinds) AND state = 'running'
+              AND lease_until <= now() AND attempts >= :max_attempts
+            ORDER BY lease_until, id
+            FOR UPDATE SKIP LOCKED
+            LIMIT :limit
+        )
+        UPDATE jobs AS j SET state = 'failed', worker_id = NULL, lease_until = NULL,
+            last_error_code = 'attempts_exhausted', updated_at = now()
+        FROM candidates WHERE j.id = candidates.id
+        RETURNING j.id, j.org_id, j.kind, j.resource_id, j.state, j.attempts,
+                  j.run_after, j.lease_until, j.worker_id, j.last_error_code
+    """), {"allowed_kinds": list(kinds), "max_attempts": max_attempts, "limit": limit}).mappings().all()
+    return [_job(row) for row in rows]
 
 
 def complete_job(db: Session, *, org_id: UUID, job_id: UUID, worker_id: str) -> bool:

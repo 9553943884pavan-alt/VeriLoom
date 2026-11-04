@@ -15,16 +15,20 @@ RESOURCE = UUID("33333333-3333-4333-8333-333333333333")
 
 
 class FakeResult:
-    def __init__(self, *, row=None, scalar=None, rowcount=1):
+    def __init__(self, *, row=None, scalar=None, rowcount=1, rows=None):
         self.row = row
         self.scalar = scalar
         self.rowcount = rowcount
+        self.rows = rows or []
 
     def mappings(self):
         return self
 
     def first(self):
         return self.row
+
+    def all(self):
+        return self.rows
 
     def scalar_one(self):
         return self.scalar
@@ -70,7 +74,33 @@ def test_claim_validates_worker_and_limits_without_querying() -> None:
         queue.claim_job(db, worker_id="", lease_seconds=30)
     with pytest.raises(ValueError):
         queue.claim_job(db, worker_id="w", lease_seconds=0)
+    with pytest.raises(ValueError):
+        queue.claim_job(db, worker_id="w", allowed_kinds=[])
     assert db.sql == ""
+
+
+def test_claim_can_limit_job_kinds_for_a_partial_worker() -> None:
+    db = FakeSession(FakeResult(row=None))
+    assert queue.claim_job(db, worker_id="worker-a", allowed_kinds=("ingest_source",)) is None
+    assert db.sql.count("AND kind = ANY(:allowed_kinds)") == 1
+    assert "j.kind = ANY(:allowed_kinds)" not in db.sql
+    assert db.params["allowed_kinds"] == ["ingest_source"]
+
+
+def test_exhausted_lease_sweep_returns_resources_for_terminal_failure() -> None:
+    now = datetime.now(timezone.utc)
+    db = FakeSession(FakeResult(rows=[{
+        "id": JOB, "org_id": ORG, "kind": "review_revision", "resource_id": RESOURCE,
+        "state": "failed", "attempts": 5, "run_after": now, "lease_until": None,
+        "worker_id": None, "last_error_code": "attempts_exhausted",
+    }]))
+    expired = queue.fail_exhausted_leases(
+        db, allowed_kinds=("review_revision",), max_attempts=5,
+    )
+    assert len(expired) == 1 and expired[0].resource_id == RESOURCE
+    assert "FOR UPDATE SKIP LOCKED" in db.sql
+    assert "kind = ANY(:allowed_kinds)" in db.sql
+    assert db.params["allowed_kinds"] == ["review_revision"]
 
 
 def test_enqueue_validates_kind_and_binds_tenant_resource_tuple() -> None:
