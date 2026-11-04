@@ -9,6 +9,7 @@ from app.api.health import router as health_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.invitations import router as invitations_router
 from app.api.v1.organisations import router as organisations_router
+from app.api.v1.sources import router as sources_router
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
 from app.core.security import AUTH_RATE_LIMITER, cookie_name, csrf_matches
@@ -54,6 +55,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router, prefix="/api/v1")
     app.include_router(organisations_router, prefix="/api/v1")
     app.include_router(invitations_router, prefix="/api/v1")
+    app.include_router(sources_router, prefix="/api/v1")
     return app
 
 
