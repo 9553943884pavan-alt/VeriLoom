@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "public_reference",
+  "type": "object",
+  "required": [
+    "record_id",
+    "organisation_id",
+    "data_kind",
+    "status",
+    "ingestible",
+    "title",
+    "category",
+    "text",
+    "source_url",
+    "publisher",
+    "accessed_at",
+    "license_note",
+    "source_terms_url",
+    "adoption_required"
+  ],
+  "properties": {
+    "record_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "organisation_id": {
+      "type": "null"
+    },
+    "data_kind": {
+      "enum": [
+        "public_reference_summary"
+      ]
+    },
+    "status": {
+      "enum": [
+        "reference_only"
+      ]
+    },
+    "ingestible": {
+      "const": false
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "category": {
+      "type": "string",
+      "minLength": 1
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "publisher": {
+      "type": "string",
+      "minLength": 1
+    },
+    "accessed_at": {
+      "type": "string",
+      "format": "date"
+    },
+    "license_note": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_terms_url": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri"
+    },
+    "adoption_required": {
+      "const": true
+    }
+  },
+  "additionalProperties": false
+}

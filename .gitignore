@@ -1,0 +1,20 @@
+# Keep local credentials out of source control.
+.env
+.env.*
+!.env.example
+
+# Local Python environments, caches, and generated artifacts.
+backend/.venv/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Frontend dependencies and build output.
+frontend/node_modules/
+frontend/dist/
+
+# Downloaded local model weights and editor artifacts.
+.cache/
+.vscode/

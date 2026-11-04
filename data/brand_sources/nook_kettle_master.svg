@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 150" role="img" aria-labelledby="title desc">
+  <title id="title">Nook &amp; Kettle</title>
+  <desc id="desc">Original dark green line drawing of a kettle beside the Nook &amp; Kettle wordmark.</desc>
+  <rect width="500" height="150" rx="18" fill="#F5EBDD"/>
+  <g fill="none" stroke="#24352B" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M59 59h76v47c0 18-14 32-32 32H91c-18 0-32-14-32-32V59Z"/>
+    <path d="M135 72h14c13 0 21 9 21 21s-8 21-21 21h-14"/>
+    <path d="M59 70 39 86l20 9"/>
+    <path d="M76 47c-9-10-7-20 1-29M101 47c-8-10-6-20 2-29M126 47c-8-10-6-20 2-29"/>
+    <path d="M72 59h50"/>
+  </g>
+  <circle cx="98" cy="101" r="6" fill="#B85F43"/>
+  <text x="194" y="82" fill="#24352B" font-family="Georgia, serif" font-size="31" font-weight="700">Nook &amp; Kettle</text>
+  <text x="196" y="111" fill="#B85F43" font-family="Arial, sans-serif" font-size="13" letter-spacing="3">A NEIGHBOURHOOD CAFE</text>
+</svg>

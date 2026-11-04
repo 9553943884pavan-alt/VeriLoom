@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "followup",
+  "type": "object",
+  "required": [
+    "case_id",
+    "organisation_id",
+    "data_kind",
+    "split",
+    "draft_id",
+    "draft_revision",
+    "history",
+    "active_finding",
+    "available_source_ids",
+    "question",
+    "expected_query",
+    "expected_route",
+    "requires_rewrite",
+    "expected_source_ids",
+    "expected_answer_points",
+    "should_abstain"
+  ],
+  "properties": {
+    "case_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "organisation_id": {
+      "enum": [
+        "nook-kettle"
+      ]
+    },
+    "data_kind": {
+      "enum": [
+        "synthetic_demo"
+      ]
+    },
+    "split": {
+      "enum": [
+        "development",
+        "holdout"
+      ]
+    },
+    "draft_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "draft_revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "role",
+          "text"
+        ],
+        "properties": {
+          "role": {
+            "enum": [
+              "reviewer",
+              "assistant",
+              "user"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "active_finding": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "available_source_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "question": {
+      "type": "string",
+      "minLength": 1
+    },
+    "expected_query": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "expected_route": {
+      "enum": [
+        "reuse_evidence",
+        "hybrid_search",
+        "clarify"
+      ]
+    },
+    "requires_rewrite": {
+      "type": "boolean"
+    },
+    "expected_source_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "expected_answer_points": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "should_abstain": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false
+}

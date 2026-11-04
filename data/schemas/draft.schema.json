@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "draft",
+  "type": "object",
+  "required": [
+    "case_id",
+    "organisation_id",
+    "data_kind",
+    "split",
+    "draft_revision",
+    "channel",
+    "content_format",
+    "content",
+    "image",
+    "expected_findings",
+    "expected_status"
+  ],
+  "properties": {
+    "case_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "organisation_id": {
+      "enum": [
+        "nook-kettle"
+      ]
+    },
+    "data_kind": {
+      "enum": [
+        "synthetic_demo"
+      ]
+    },
+    "split": {
+      "enum": [
+        "development",
+        "holdout"
+      ]
+    },
+    "draft_revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "channel": {
+      "type": "string",
+      "minLength": 1
+    },
+    "content_format": {
+      "enum": [
+        "text",
+        "image_metadata"
+      ]
+    },
+    "content": {
+      "type": "string",
+      "minLength": 1
+    },
+    "image": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "description",
+            "alt_text",
+            "asset_path"
+          ],
+          "properties": {
+            "description": {
+              "type": "string",
+              "minLength": 1
+            },
+            "alt_text": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "asset_path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "expected_findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "category",
+          "severity",
+          "source_ids",
+          "explanation",
+          "suggested_edit"
+        ],
+        "properties": {
+          "category": {
+            "type": "string",
+            "minLength": 1
+          },
+          "severity": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "Low",
+              "Medium",
+              "High"
+            ]
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true,
+            "minItems": 1
+          },
+          "explanation": {
+            "type": "string",
+            "minLength": 1
+          },
+          "suggested_edit": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "expected_status": {
+      "enum": [
+        "pass",
+        "flag",
+        "needs_human_review"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,29 @@
+{
+  "kind": "static_dataset_validation",
+  "status": "passed",
+  "counts": {
+    "approved_knowledge": 45,
+    "isolation_fixtures": 2,
+    "drafts": 24,
+    "followups": 18,
+    "scope_cases": 4,
+    "public_references": 9,
+    "problem_evidence": 4
+  },
+  "draft_status_counts": {
+    "pass": 8,
+    "flag": 15,
+    "needs_human_review": 1
+  },
+  "draft_split_counts": {
+    "development": 16,
+    "holdout": 8
+  },
+  "errors": [],
+  "limitations": [
+    "No RAG pipeline or model was executed.",
+    "Expected answers are authored labels, not measured performance.",
+    "SVG XML parsing does not validate visual layout.",
+    "JSON schema validation does not establish truth of external sources."
+  ]
+}

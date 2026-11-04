@@ -1,0 +1,75 @@
+{
+  "dataset_version": "2.0",
+  "prepared_on": "2026-11-03",
+  "encoding": "UTF-8 without BOM",
+  "format": "JSON Lines",
+  "normal_ingestion_allowlist": [
+    "data/knowledge/records.jsonl"
+  ],
+  "synthetic_data_disclosure": "Brand facts and evaluation labels are AI-assisted fictional demo material, reviewed for internal consistency. They are not customer research or measured model results.",
+  "datasets": [
+    {
+      "name": "approved_knowledge",
+      "path": "data/knowledge/records.jsonl",
+      "schema": "data/schemas/knowledge.schema.json",
+      "id_field": "record_id",
+      "purpose": "approved_demo_ingestion",
+      "record_count": 45,
+      "sha256": "c42fa1bd9c736a5eda233b4e8c5089c949ca51dc23f7c8bc5eb64aafc46928f2"
+    },
+    {
+      "name": "isolation_fixtures",
+      "path": "data/knowledge/isolation_fixtures.jsonl",
+      "schema": "data/schemas/knowledge.schema.json",
+      "id_field": "record_id",
+      "purpose": "evaluation_only",
+      "record_count": 2,
+      "sha256": "556c43f1597c921e93b44a7a9c6f68df1f55dc48531803a7f0cab5e01d495036"
+    },
+    {
+      "name": "drafts",
+      "path": "data/evaluation/drafts.jsonl",
+      "schema": "data/schemas/draft.schema.json",
+      "id_field": "case_id",
+      "purpose": "evaluation_only",
+      "record_count": 24,
+      "sha256": "15a5c4ae6214136085bbc0dd93ee8b82a93d450fbb59304596f20878a1e9923b"
+    },
+    {
+      "name": "followups",
+      "path": "data/evaluation/followup_cases.jsonl",
+      "schema": "data/schemas/followup.schema.json",
+      "id_field": "case_id",
+      "purpose": "evaluation_only",
+      "record_count": 18,
+      "sha256": "670e139f07efa95919ef5998cc779446c24a3f94724a83c1c322617a62681b51"
+    },
+    {
+      "name": "scope_cases",
+      "path": "data/evaluation/scope_cases.jsonl",
+      "schema": "data/schemas/scope_case.schema.json",
+      "id_field": "case_id",
+      "purpose": "evaluation_only",
+      "record_count": 4,
+      "sha256": "3e1fd0963960b66b86d75b0a59918f4fbb2e5d71dae0a7d868595d6346392acb"
+    },
+    {
+      "name": "public_references",
+      "path": "data/public_references/references.jsonl",
+      "schema": "data/schemas/public_reference.schema.json",
+      "id_field": "record_id",
+      "purpose": "reference_only_requires_adoption",
+      "record_count": 9,
+      "sha256": "0ca1382653697422cf164c26b16e8976376739f99afa497b4af41628adfe9d72"
+    },
+    {
+      "name": "problem_evidence",
+      "path": "data/public_references/problem_evidence.jsonl",
+      "schema": "data/schemas/problem_evidence.schema.json",
+      "id_field": "record_id",
+      "purpose": "research_only",
+      "record_count": 4,
+      "sha256": "dfdd519d73b56273f7a4cdfd899b88cd9683eccb8926c5539a14eb1d9c25ee4b"
+    }
+  ]
+}
