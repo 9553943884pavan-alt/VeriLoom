@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable
+from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from uuid import UUID, uuid4
 
 from sqlalchemy.exc import IntegrityError
@@ -19,10 +21,56 @@ from app.rag.ingestion import (
     UnsupportedGuidanceFormat,
     extract_guidance,
 )
-from app.schemas.sources import SourceUploadAccepted, SourceUploadMetadata
+from app.schemas.sources import SourceApprovalRequest, SourceUploadAccepted, SourceUploadMetadata
 from app.services.organisations import _require_role
 
 IDEMPOTENCY_ENDPOINT = "/organisations/{org_id}/sources"
+
+
+def approve_source_version(
+    db: Session,
+    *,
+    org_id: UUID,
+    source_id: UUID,
+    version_id: UUID,
+    actor_id: UUID,
+    request: SourceApprovalRequest,
+) -> dict:
+    """Atomically activate an ingested, currently effective guidance version."""
+    org = repo.lock_org_for_approval(db, org_id=org_id)
+    if org is None:
+        raise ApiError(404, "not_found", "The source was not found.")
+    # Membership updates also lock the organisation first, keeping this check
+    # stable until the activation transaction commits.
+    _require_role(db, org_id, actor_id, {"admin"})
+    if org["corpus_version"] != request.expected_corpus_version:
+        raise ApiError(409, "stale_version", "The guidance corpus changed. Refresh before approving.",
+                       {"current_corpus_version": org["corpus_version"]})
+    if not repo.lock_source_for_approval(db, org_id=org_id, source_id=source_id):
+        raise ApiError(404, "not_found", "The source was not found.")
+    version = repo.lock_version_for_approval(
+        db, org_id=org_id, source_id=source_id, version_id=version_id
+    )
+    if version is None:
+        raise ApiError(404, "not_found", "The source version was not found.")
+    if version["ingestion_status"] != "ready" or version["approval_status"] != "pending":
+        raise ApiError(409, "source_not_approvable", "Only a ready, pending source version can be approved.")
+    try:
+        today = datetime.now(ZoneInfo(org["time_zone"])).date()
+    except (ZoneInfoNotFoundError, TypeError) as exc:
+        raise ApiError(500, "invalid_organisation_timezone", "The organisation time zone is invalid.") from exc
+    if version["effective_from"] > today:
+        raise ApiError(409, "source_not_effective", "The source version is not effective yet.")
+    if version["effective_to"] is not None and version["effective_to"] <= today:
+        raise ApiError(409, "source_expired", "The source version has expired.")
+    if not repo.version_has_passages(db, org_id=org_id, source_id=source_id, version_id=version_id):
+        raise ApiError(409, "source_has_no_passages", "A source version needs passages before approval.")
+    corpus_version = org["corpus_version"] + 1
+    repo.activate_source_version(
+        db, org_id=org_id, source_id=source_id, version_id=version_id, corpus_version=corpus_version
+    )
+    db.commit()
+    return {"source_id": source_id, "approved_version_id": version_id, "corpus_version": corpus_version}
 
 
 def _request_digest(content: bytes, metadata: SourceUploadMetadata, mime_type: str) -> str:
@@ -61,6 +109,8 @@ def upload_source(
             db, user_id=actor_id, endpoint=IDEMPOTENCY_ENDPOINT, key=idempotency_key
         )
         if existing is not None:
+            if existing.get("expired", False):
+                raise ApiError(409, "idempotency_key_expired", "This key has expired and cannot be reused.")
             if existing["org_id"] != org_id or existing["request_sha256"] != digest:
                 raise ApiError(409, "idempotency_key_reused", "This key was used for a different request.")
             if existing["state"] == "complete":
@@ -110,8 +160,11 @@ def upload_source(
                     db, user_id=actor_id, endpoint=IDEMPOTENCY_ENDPOINT, key=idempotency_key
                 )
                 if existing is not None:
-                    if existing["org_id"] == org_id and existing["request_sha256"] == digest and existing["state"] == "complete":
+                    if (not existing.get("expired", False) and existing["org_id"] == org_id
+                            and existing["request_sha256"] == digest and existing["state"] == "complete"):
                         return SourceUploadAccepted.model_validate(existing["response_json"]).model_dump()
+                    if existing.get("expired", False):
+                        raise ApiError(409, "idempotency_key_expired", "This key has expired and cannot be reused.") from exc
                     raise ApiError(409, "idempotency_key_reused", "This key was used for a different request.") from exc
         raise
     return result

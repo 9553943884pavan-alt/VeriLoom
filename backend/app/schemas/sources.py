@@ -37,3 +37,13 @@ class SourceUploadAccepted(StrictModel):
     source_id: UUID
     version_id: UUID
     ingestion_status: Literal["queued"]
+
+
+class SourceApprovalRequest(StrictModel):
+    expected_corpus_version: int = Field(ge=0)
+
+
+class SourceApprovalResponse(StrictModel):
+    source_id: UUID
+    approved_version_id: UUID
+    corpus_version: int = Field(ge=1)

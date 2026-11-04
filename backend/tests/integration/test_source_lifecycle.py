@@ -1,7 +1,8 @@
 """Source upload lifecycle tests with fake storage and database writes."""
 
-from datetime import date
+from datetime import date, datetime, timedelta
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,7 +14,7 @@ from app.core.errors import ApiError
 from app.core.security import csrf_token
 from app.integrations.r2 import R2StorageError
 from app.db.session import get_session
-from app.schemas.sources import SourceUploadMetadata
+from app.schemas.sources import SourceApprovalRequest, SourceUploadMetadata
 from app.services import sources
 from app.main import create_app
 
@@ -230,3 +231,116 @@ def test_http_upload_contract_and_openapi_route(monkeypatch: pytest.MonkeyPatch)
         files={"file": ("guide.txt", b"x" * (2 * 1024 * 1024 + 1), "text/plain")},
     )
     assert too_large.status_code == 413
+
+
+def test_approval_archives_old_version_and_bumps_corpus_atomically(monkeypatch: pytest.MonkeyPatch) -> None:
+    db = FakeDb()
+    today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    allow_admin(monkeypatch, ["admin"])
+    calls: list[tuple[str, object]] = []
+    monkeypatch.setattr(sources.repo, "lock_org_for_approval", lambda *_a, **_k: {
+        "id": ORG_ID, "corpus_version": 8, "time_zone": "Asia/Kolkata",
+    })
+    monkeypatch.setattr(sources.repo, "lock_source_for_approval", lambda *_a, **_k: True)
+    monkeypatch.setattr(sources.repo, "lock_version_for_approval", lambda *_a, **_k: {
+        "effective_from": today - timedelta(days=1), "effective_to": None,
+        "ingestion_status": "ready", "approval_status": "pending",
+    })
+    monkeypatch.setattr(sources.repo, "version_has_passages", lambda *_a, **_k: True)
+    monkeypatch.setattr(sources.repo, "activate_source_version", lambda *_a, **kw: calls.append(("activate", kw)))
+
+    result = sources.approve_source_version(
+        db, org_id=ORG_ID, source_id=UUID("33333333-3333-4333-8333-333333333333"),
+        version_id=UUID("44444444-4444-4444-8444-444444444444"), actor_id=ADMIN_ID,
+        request=SourceApprovalRequest(expected_corpus_version=8),
+    )
+    assert result == {
+        "source_id": UUID("33333333-3333-4333-8333-333333333333"),
+        "approved_version_id": UUID("44444444-4444-4444-8444-444444444444"),
+        "corpus_version": 9,
+    }
+    assert calls == [("activate", {
+        "org_id": ORG_ID, "source_id": result["source_id"],
+        "version_id": result["approved_version_id"], "corpus_version": 9,
+    })]
+    assert db.commits == 1
+
+
+@pytest.mark.parametrize("version,code", [
+    ({"ingestion_status": "queued", "approval_status": "pending"}, "source_not_approvable"),
+    ({"ingestion_status": "failed", "approval_status": "pending"}, "source_not_approvable"),
+    ({"ingestion_status": "ready", "approval_status": "approved"}, "source_not_approvable"),
+    ({"ingestion_status": "ready", "approval_status": "pending", "effective_from": datetime.now(ZoneInfo("Asia/Kolkata")).date() + timedelta(days=1), "effective_to": None}, "source_not_effective"),
+    ({"ingestion_status": "ready", "approval_status": "pending", "effective_from": datetime.now(ZoneInfo("Asia/Kolkata")).date() - timedelta(days=1), "effective_to": datetime.now(ZoneInfo("Asia/Kolkata")).date()}, "source_expired"),
+])
+def test_approval_rejects_ineligible_versions(monkeypatch: pytest.MonkeyPatch, version: dict, code: str) -> None:
+    allow_admin(monkeypatch, ["admin"])
+    monkeypatch.setattr(sources.repo, "lock_org_for_approval", lambda *_a, **_k: {
+        "id": ORG_ID, "corpus_version": 8, "time_zone": "Asia/Kolkata",
+    })
+    monkeypatch.setattr(sources.repo, "lock_source_for_approval", lambda *_a, **_k: True)
+    base = {"effective_from": datetime.now(ZoneInfo("Asia/Kolkata")).date() - timedelta(days=1), "effective_to": None,
+            "ingestion_status": "ready", "approval_status": "pending"}
+    monkeypatch.setattr(sources.repo, "lock_version_for_approval", lambda *_a, **_k: {**base, **version})
+    monkeypatch.setattr(sources.repo, "version_has_passages", lambda *_a, **_k: True)
+    with pytest.raises(ApiError) as error:
+        sources.approve_source_version(
+            FakeDb(), org_id=ORG_ID, source_id=ORG_ID, version_id=ADMIN_ID,
+            actor_id=ADMIN_ID, request=SourceApprovalRequest(expected_corpus_version=8),
+        )
+    assert error.value.code == code
+
+
+def test_approval_rejects_stale_corpus_and_empty_passages(monkeypatch: pytest.MonkeyPatch) -> None:
+    allow_admin(monkeypatch, ["admin"])
+    monkeypatch.setattr(sources.repo, "lock_org_for_approval", lambda *_a, **_k: {
+        "id": ORG_ID, "corpus_version": 9, "time_zone": "Asia/Kolkata",
+    })
+    with pytest.raises(ApiError) as stale:
+        sources.approve_source_version(
+            FakeDb(), org_id=ORG_ID, source_id=ORG_ID, version_id=ADMIN_ID,
+            actor_id=ADMIN_ID, request=SourceApprovalRequest(expected_corpus_version=8),
+        )
+    assert stale.value.code == "stale_version"
+
+    monkeypatch.setattr(sources.repo, "lock_org_for_approval", lambda *_a, **_k: {
+        "id": ORG_ID, "corpus_version": 8, "time_zone": "Asia/Kolkata",
+    })
+    monkeypatch.setattr(sources.repo, "lock_source_for_approval", lambda *_a, **_k: True)
+    today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    monkeypatch.setattr(sources.repo, "lock_version_for_approval", lambda *_a, **_k: {
+        "effective_from": today - timedelta(days=1), "effective_to": None,
+        "ingestion_status": "ready", "approval_status": "pending",
+    })
+    monkeypatch.setattr(sources.repo, "version_has_passages", lambda *_a, **_k: False)
+    with pytest.raises(ApiError) as empty:
+        sources.approve_source_version(
+            FakeDb(), org_id=ORG_ID, source_id=ORG_ID, version_id=ADMIN_ID,
+            actor_id=ADMIN_ID, request=SourceApprovalRequest(expected_corpus_version=8),
+        )
+    assert empty.value.code == "source_has_no_passages"
+
+
+def test_approval_http_and_openapi_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = Settings.model_construct(
+        DATABASE_URL=SecretStr("postgresql://unused"), SESSION_SECRET=SecretStr("test-secret"),
+        APP_ORIGIN="http://localhost:5173",
+    )
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_session] = lambda: FakeDb()
+    monkeypatch.setattr("app.main.get_settings", lambda: settings)
+    monkeypatch.setattr("app.api.v1.organisations.authentication.current_user",
+                        lambda *_args: {"id": ADMIN_ID, "email": "admin@example.com"})
+    result = {"source_id": ORG_ID, "approved_version_id": ADMIN_ID, "corpus_version": 9}
+    monkeypatch.setattr(sources, "approve_source_version", lambda *_a, **_k: result)
+    client = TestClient(app)
+    client.cookies.set("veriloom_session_dev", "opaque-token")
+    headers = {"Origin": settings.APP_ORIGIN,
+               "X-CSRF-Token": csrf_token(settings, "opaque-token")}
+    path = f"/api/v1/organisations/{ORG_ID}/sources/{ADMIN_ID}/versions/{ORG_ID}/approve"
+    response = client.post(path, headers=headers, json={"expected_corpus_version": 8})
+    assert response.status_code == 200
+    assert response.json() == {"source_id": str(ORG_ID), "approved_version_id": str(ADMIN_ID), "corpus_version": 9}
+    spec = client.get("/openapi.json").json()
+    assert "/api/v1/organisations/{org_id}/sources/{source_id}/versions/{version_id}/approve" in spec["paths"]

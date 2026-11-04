@@ -12,7 +12,7 @@ from app.api.v1.organisations import signed_in_user
 from app.core.errors import ApiError
 from app.db.session import get_session
 from app.integrations.r2 import R2Storage
-from app.schemas.sources import SourceUploadAccepted, SourceUploadMetadata
+from app.schemas.sources import SourceApprovalRequest, SourceApprovalResponse, SourceUploadAccepted, SourceUploadMetadata
 from app.services import sources
 from app.services.organisations import _require_role
 
@@ -66,4 +66,22 @@ def upload_source(
     return sources.upload_source(
         db, storage_factory, org_id=org_id, actor_id=user["id"], metadata=metadata,
         filename=file.filename or "", content=content, idempotency_key=key,
+    )
+
+
+@router.post(
+    "/{org_id}/sources/{source_id}/versions/{version_id}/approve",
+    response_model=SourceApprovalResponse,
+)
+def approve_source_version(
+    org_id: UUID,
+    source_id: UUID,
+    version_id: UUID,
+    payload: SourceApprovalRequest,
+    user: dict = Depends(signed_in_user),
+    db: Session = Depends(get_session),
+) -> dict:
+    return sources.approve_source_version(
+        db, org_id=org_id, source_id=source_id, version_id=version_id,
+        actor_id=user["id"], request=payload,
     )
