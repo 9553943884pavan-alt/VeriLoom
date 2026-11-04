@@ -12,7 +12,7 @@ from app.core.config import Settings, get_settings
 
 CHAT_COMPLETIONS_URL = "https://api.sarvam.ai/v2/chat/completions"
 CONNECT_TIMEOUT_SECONDS = 3.0
-READ_TIMEOUT_SECONDS = 45.0
+READ_TIMEOUT_SECONDS = 90.0
 MAX_ATTEMPTS = 3
 MAX_OUTPUT_TOKENS = 4096
 _RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
@@ -104,6 +104,10 @@ class SarvamChat:
                 },
             },
         }
+        # Sarvam-105B otherwise spends the completion budget on hidden reasoning;
+        # JSON extraction needs its budget for the schema-constrained response.
+        if self._model == "sarvam-105b":
+            body["reasoning_effort"] = "none"
         response = self._post_with_retries(body)
         try:
             payload = response.json()

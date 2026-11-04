@@ -74,7 +74,7 @@ def test_hybrid_filters_both_queries_and_returns_metadata():
         assert "v.ingestion_status = 'ready'" in sql
         assert "s.archived_at IS NULL" in sql
         assert "v.effective_from <= :as_of" in sql
-        assert "p.category = :category" in sql
+        assert "p.category = CAST(:category AS text)" in sql
         assert "p.embedding_model = :model_id" in sql
         assert params["org_id"] == ORG
 

@@ -22,11 +22,11 @@ from app.rag.retrieval.hybrid import CorpusChanged, retrieve_evidence
 
 ROUTER_VERSION = "followup_router/1.0.0"
 REWRITE_VERSION = "rewrite_followup/2.0.0"
-ANSWER_VERSION = "grounded_answer/2.0.0"
+ANSWER_VERSION = "grounded_answer/2.0.1"
 
 REWRITE_PROMPT = """TASK: Rewrite the raw reviewer question as one standalone search query, or ask for clarification. Return exactly the three rewrite_followup_v2 JSON fields. Use the selected finding and at most four recent turns only to resolve references; prior answers are not evidence. Preserve names, numbers, dates, quotation marks, comparisons, and negation. Do not invent a source, fact, policy, conclusion, or reviewer intent. If the referent remains ambiguous, set needs_clarification=true, standalone_query=null and ask one short clarification. Otherwise set needs_clarification=false, provide one concise standalone_query, and set clarification_question=null. Do not answer the brand question."""
 
-ANSWER_PROMPT = """TASK: Answer the raw reviewer question about the immutable revision using current_evidence only. Return exactly the grounded_answer_v2 JSON fields. Selected finding and recent turns may resolve references but are not brand authority. Cite 1-3 distinct current passage IDs with exact supporting quotes only when the passages directly establish the narrow answer. If the referent is ambiguous, use clarification_needed with one question and evidence=[]. If current evidence is missing, conflicting, or too weak, use insufficient_evidence and evidence=[]. Never approve content, apply an edit, claim to inspect images, or use model memory to fill gaps. Keep the answer at most 900 characters."""
+ANSWER_PROMPT = """TASK: Answer the raw reviewer question about the immutable revision using current_evidence only. Return exactly the grounded_answer_v2 JSON fields. Selected finding and recent turns may resolve references but are not brand authority. Cite 1-3 distinct current passage IDs with exact supporting quotes only when the passages directly establish the narrow answer. If the question asks whether guidance prohibits or requires a specific phrase or action, and a passage explicitly states that rule for the same subject, answer that narrow question with a citation. Do not require an approved alternative or broader policy when the reviewer did not ask for one. If the referent is ambiguous, use clarification_needed with one question and evidence=[]. If current evidence is missing, conflicting, or too weak for the actual question, use insufficient_evidence and evidence=[]. Never approve content, apply an edit, claim to inspect images, or use model memory to fill gaps. Keep the answer at most 900 characters."""
 
 REWRITE_SCHEMA: dict[str, Any] = {
     "type": "object", "additionalProperties": False,
@@ -184,7 +184,7 @@ def _select(db: Session, *, org_id: UUID, turn_id: UUID, embedder: FollowupEmbed
                 [{"role": "system", "content": SYSTEM_PROMPT},
                  {"role": "developer", "content": REWRITE_PROMPT},
                  {"role": "user", "content": json.dumps(context, ensure_ascii=False, default=str)}],
-                schema_name="veriloom_rewrite_followup_v2", schema=REWRITE_SCHEMA, max_tokens=400,
+                schema_name="veriloom_rewrite_followup_v2", schema=REWRITE_SCHEMA, max_tokens=4096,
             ))
         except SarvamError as exc:
             raise AnswerFailure("rewrite_provider_error", retryable=True) from exc
@@ -323,7 +323,7 @@ def answer_question(db: Session, *, org_id: UUID, turn_id: UUID,
                 [{"role": "system", "content": SYSTEM_PROMPT},
                  {"role": "developer", "content": ANSWER_PROMPT},
                  {"role": "user", "content": json.dumps(payload, ensure_ascii=False, default=str)}],
-                schema_name="veriloom_grounded_answer_v2", schema=ANSWER_SCHEMA, max_tokens=1200,
+                schema_name="veriloom_grounded_answer_v2", schema=ANSWER_SCHEMA, max_tokens=4096,
             )
             validated = validate_answer(raw, current_passages={p["passage_id"]: p["text"] for p in passages})
         except SarvamError as exc:

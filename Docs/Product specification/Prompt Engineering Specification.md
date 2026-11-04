@@ -32,7 +32,7 @@ The prompt and model response are not a security boundary. An instruction in a s
 |---|---|---|---|---|
 | `initial_review` | `review_revision(review_id)` job | Immutable revision text, channel, review date, retrieved approved passages | Coverage assessment, candidate findings, and exact supporting quotes | `initial_review/2.0.0` |
 | `rewrite_followup` | `answer_question(turn_id)` only for context-dependent questions | Raw question, active finding, recent relevant turns | Standalone query or clarification need | `rewrite_followup/2.0.0` |
-| `grounded_answer` | `answer_question(turn_id)` | Raw question, optional rewritten query, active revision/finding, selected current evidence | Answer status, answer, and exact supporting quotes | `grounded_answer/2.0.0` |
+| `grounded_answer` | `answer_question(turn_id)` | Raw question, optional rewritten query, active revision/finding, selected current evidence | Answer status, answer, and exact supporting quotes | `grounded_answer/2.0.1` |
 
 There is no separate “approval prompt.” The routing rules are backend code with version `followup_router/1.0.0`, logged beside each chat turn. The selected Sarvam model ID and, where available, provider model version are also logged. Prompt IDs and templates live in source control, reviewed like code; a change to required fields or meaning increments the major version, a new optional behavior increments minor, and wording-only corrections increment patch. Version `2.0.0` denotes this stronger design and changed private output fields; it is still a proposed first deployment, not a claim that version `1.0.0` ran in production. Do not silently overwrite a template used for historical reviews.
 
@@ -177,7 +177,7 @@ The backend requests strict Sarvam JSON Schema `veriloom_rewrite_followup_v2` wi
 
 ## 7. Grounded follow-up answer prompt
 
-**Developer message for `grounded_answer/2.0.0`:**
+**Developer message for `grounded_answer/2.0.1`:**
 
 ```text
 TASK: Answer one reviewer question about the current immutable revision from current_evidence only. Return the grounded_answer_v2 JSON object.
@@ -186,7 +186,7 @@ ANSWER PROCEDURE
 1. Identify the exact question and its referent from the raw question, optional rewritten query, current revision, and selected finding. Recent chat may clarify wording but cannot establish a brand fact. Historical finding citations are background until the backend has revalidated and included them in current_evidence.
 2. Inspect each current_evidence passage. Separate passages that directly answer the question from merely topical passages. For every factual or policy statement in the answer, select one or more directly supporting passages and copy a short exact supporting_quote from each.
 3. If the question has multiple plausible referents, set answer_status="clarification_needed", ask one precise clarification in answer, and use evidence=[]. If the question is clear but the current evidence is missing, conflicting, expired, or too weak, set answer_status="insufficient_evidence", explain what is missing, and use evidence=[]. Do not fill the gap with model memory or a prior answer.
-4. Only when current evidence directly supports the answer, set answer_status="answered". State the narrow conclusion in plain language, with any relevant condition or effective-date limitation. Use 1–3 distinct evidence passages. Avoid unqualified "always", "never", or "approved" unless the passage warrants it.
+4. When current evidence directly supports the actual question, set answer_status="answered". If the question asks whether guidance prohibits or requires a specific phrase or action and a passage explicitly states that rule for the same subject, answer that narrow question with a citation. Do not require an approved alternative or a broader policy unless the reviewer asked for one. State any relevant condition or effective-date limitation. Use 1–3 distinct evidence passages. Avoid unqualified "always", "never", or "approved" unless the passage warrants it.
 5. Do not approve/reject content, claim an edit was applied, or say an image or logo was inspected. Keep answer at most 900 characters. Do not expose source text beyond the short supporting quotes and the public citation fields that the backend will attach.
 
 FINAL CHECK BEFORE JSON

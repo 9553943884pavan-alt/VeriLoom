@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
+import json
 from uuid import UUID
 
 from app.jobs.handlers.review_revision import ReviewFailure, review_revision
 from app.jobs.handlers.review_revision import _queries
+from app.schemas.drafts import DecisionRequest
+from app.services import reviews
 from app.rag.retrieval.fusion import FusedCandidate
 from app.rag.retrieval.hybrid import EvidencePassage
 
@@ -14,6 +17,8 @@ REVISION = UUID("33333333-3333-4333-8333-333333333333")
 PASSAGE = UUID("44444444-4444-4444-8444-444444444444")
 SOURCE = UUID("55555555-5555-4555-8555-555555555555")
 VERSION = UUID("66666666-6666-4666-8666-666666666666")
+REVIEWER = UUID("88888888-8888-4888-8888-888888888888")
+DECISION = UUID("99999999-9999-4999-8999-999999999999")
 
 
 class Result:
@@ -172,3 +177,62 @@ def test_query_planner_obeys_e5_token_bound_and_flags_omitted_segments():
     assert len(queries) == 8
     assert all(Embedder().count_tokens("query: " + query) <= 512 for query in queries)
     assert "claim13" not in " ".join(queries)
+
+
+def test_decision_idempotency_payload_encodes_datetime(monkeypatch):
+    class EmptyResult:
+        def mappings(self):
+            return self
+
+        def first(self):
+            return None
+
+    class DecisionDB:
+        def __init__(self):
+            self.calls = []
+            self.commits = 0
+
+        def execute(self, statement, params):
+            self.calls.append((str(statement), params))
+            return EmptyResult()
+
+        def commit(self):
+            self.commits += 1
+
+    decided_at = datetime(2026, 11, 4, 12, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(reviews, "_require_role", lambda *_args, **_kwargs: ["reviewer"])
+    monkeypatch.setattr(reviews.repo, "lock_review_decision", lambda *_args, **_kwargs: {
+        "reviewer_user_id": REVIEWER,
+        "creator_user_id": UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
+        "review_version": 3,
+        "revision_id": REVISION,
+        "current_revision_id": REVISION,
+        "state": "ready_for_review",
+        "draft_id": UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"),
+    })
+    monkeypatch.setattr(reviews.repo, "has_override_trigger", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(reviews.repo, "insert_decision", lambda *_args, **_kwargs: {
+        "decision_id": DECISION,
+        "decided_at": decided_at,
+    })
+    db = DecisionDB()
+
+    result = reviews.decide(
+        db,
+        org_id=ORG,
+        review_id=REVIEW,
+        user_id=REVIEWER,
+        payload=DecisionRequest(
+            expected_revision_id=REVISION,
+            expected_review_version=3,
+            action="approve",
+        ),
+        idempotency_key=UUID("cccccccc-cccc-4ccc-8ccc-cccccccccccc"),
+    )
+
+    saved = next(params for sql, params in db.calls if "INSERT INTO idempotency_records" in sql)
+    encoded_response = json.loads(saved["response"])
+    assert encoded_response["decision_id"] == str(DECISION)
+    assert encoded_response["decided_at"] == "2026-11-04T12:00:00+00:00"
+    assert result["decided_at"] == decided_at
+    assert db.commits == 1

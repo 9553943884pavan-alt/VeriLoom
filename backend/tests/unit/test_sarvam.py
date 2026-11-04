@@ -92,6 +92,14 @@ class SarvamChatTests(unittest.TestCase):
         self.assertEqual(len(client.calls), MAX_ATTEMPTS)
         self.assertEqual(self.delays, [0.2, 0.4])
 
+    def test_sarvam_105b_disables_reasoning_for_structured_json(self):
+        settings = configured_settings()
+        settings.SARVAM_MODEL = "sarvam-105b"
+        client = FakeClient([FakeResponse()])
+        chat = SarvamChat(settings, client=client)
+        self.assertEqual(chat.complete_json(self.messages, schema_name="s", schema=self.schema), {"answer": "ok"})
+        self.assertEqual(client.calls[0][1]["json"]["reasoning_effort"], "none")
+
     def test_retries_transport_failure_then_succeeds(self):
         client = FakeClient([httpx.ConnectError("sensitive"), FakeResponse()])
         chat = SarvamChat(configured_settings(), client=client, sleeper=self.delays.append)

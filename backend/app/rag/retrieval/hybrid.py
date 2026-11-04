@@ -24,7 +24,7 @@ _ELIGIBLE = """
       AND s.archived_at IS NULL
       AND v.effective_from <= :as_of
       AND (v.effective_to IS NULL OR :as_of < v.effective_to)
-      AND (:category IS NULL OR p.category = :category)
+      AND (CAST(:category AS text) IS NULL OR p.category = CAST(:category AS text))
       AND p.embedding_model = :model_id
 """
 

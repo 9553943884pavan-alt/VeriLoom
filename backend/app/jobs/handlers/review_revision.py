@@ -289,7 +289,7 @@ def review_revision(db: Session, *, org_id: UUID, review_id: UUID,
                  {"role": "developer", "content": DEVELOPER_PROMPT},
                  {"role": "user", "content": json.dumps(user_data, ensure_ascii=False)}],
                 schema_name="veriloom_initial_review_v2", schema=INITIAL_REVIEW_SCHEMA,
-                max_tokens=3000,
+                max_tokens=4096,
             )
             validated = validate_review(candidate, revision_text=draft,
                                         supplied_passages={item.passage_id: item.text for item in snapshot})

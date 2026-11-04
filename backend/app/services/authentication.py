@@ -20,7 +20,7 @@ def register(db: Session, payload: RegisterRequest) -> dict[str, Any]:
     except IntegrityError as exc:
         db.rollback()
         raise ApiError(409, "email_already_registered", "This email is already registered.") from exc
-    return user
+    return {"user_id": user["id"], "email": user["email"], "display_name": user["display_name"]}
 
 
 def login(db: Session, settings: Settings, payload: LoginRequest) -> tuple[dict[str, Any], str]:

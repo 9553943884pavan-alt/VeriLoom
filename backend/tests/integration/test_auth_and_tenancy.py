@@ -10,6 +10,7 @@ from app.core.security import csrf_token, hash_password, verify_password
 from app.db.session import get_session
 from app.main import create_app
 from app.schemas.auth import LoginRequest
+from app.schemas.auth import RegisterRequest
 from app.services import authentication
 
 
@@ -22,6 +23,29 @@ class FakeDb:
 
     def commit(self) -> None:
         self.commits += 1
+
+
+def test_register_returns_user_id_contract(monkeypatch) -> None:
+    user = {
+        "id": USER_ID,
+        "email": "alice@example.com",
+        "display_name": "Alice",
+    }
+    monkeypatch.setattr(authentication.identity, "insert_user", lambda *_args, **_kwargs: user)
+    db = FakeDb()
+
+    result = authentication.register(
+        db,
+        RegisterRequest(email=user["email"], password="strong password 123", display_name=user["display_name"]),
+    )
+
+    assert result == {
+        "user_id": USER_ID,
+        "email": "alice@example.com",
+        "display_name": "Alice",
+    }
+    assert "id" not in result
+    assert db.commits == 1
 
 
 def test_password_hash_and_csrf_are_distinct() -> None:

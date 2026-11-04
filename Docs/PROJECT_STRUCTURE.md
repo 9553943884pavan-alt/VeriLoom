@@ -177,6 +177,7 @@ VeriLoom/
 │       │   ├── test_finding_anchors.py
 │       │   └── test_prompt_validation.py
 │       └── integration/
+│           ├── live_workflow_smoke.py            opt-in disposable DB, R2, Sarvam workflow smoke
 │           ├── test_health.py                   local liveness/readiness contract
 │           ├── test_auth_and_tenancy.py
 │           ├── test_organisations.py             organisation roles and invitations

@@ -8,6 +8,7 @@ from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from fastapi.encoders import jsonable_encoder
 
 from app.core.errors import ApiError
 from app.db.repositories import reviews as repo
@@ -186,6 +187,6 @@ def decide(db: Session, *, org_id: UUID, review_id: UUID, user_id: UUID, payload
     result["review_state"] = review_state
     result["draft_state"] = draft_state
     result["review_version"] = row["review_version"]+1
-    db.execute(text("""INSERT INTO idempotency_records(user_id,org_id,endpoint,key,request_sha256,response_status,response_json,resource_id,state,expires_at) VALUES (:user_id,:org_id,:endpoint,:key,:digest,201,CAST(:response AS jsonb),:resource,'complete',now()+interval '24 hours')"""), {"user_id":user_id,"org_id":org_id,"endpoint":endpoint,"key":idempotency_key,"digest":digest,"response":json.dumps({**result,**{k:str(v) for k,v in result.items() if isinstance(v, UUID)}}),"resource":result["decision_id"]})
+    db.execute(text("""INSERT INTO idempotency_records(user_id,org_id,endpoint,key,request_sha256,response_status,response_json,resource_id,state,expires_at) VALUES (:user_id,:org_id,:endpoint,:key,:digest,201,CAST(:response AS jsonb),:resource,'complete',now()+interval '24 hours')"""), {"user_id":user_id,"org_id":org_id,"endpoint":endpoint,"key":idempotency_key,"digest":digest,"response":json.dumps(jsonable_encoder(result)),"resource":result["decision_id"]})
     db.commit()
     return result
