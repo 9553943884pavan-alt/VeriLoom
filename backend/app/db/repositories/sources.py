@@ -81,6 +81,103 @@ def insert_idempotency_record(
            "source_id": source_id})
 
 
+def list_sources(
+    db: Session, *, org_id: UUID, status: str | None, after: UUID | None, limit: int
+) -> list[dict[str, Any]]:
+    """List sources with version state evaluated in the organisation's time zone."""
+    rows = db.execute(text("""
+        SELECT s.id AS source_id, s.title, s.category, s.archived_at,
+               CASE
+                 WHEN s.archived_at IS NOT NULL THEN 'archived'
+                 WHEN active.id IS NOT NULL THEN 'active'
+                 WHEN latest.approval_status = 'pending' THEN 'pending'
+                 WHEN latest_approved.id IS NOT NULL THEN 'expired'
+                 ELSE 'pending'
+               END AS current_status,
+               active.id AS active_version_id, active.version_label AS active_version_label,
+               latest.id AS latest_version_id, latest.version_label AS latest_version_label,
+               latest.ingestion_status, latest.approval_status, latest.ingestion_error_code
+        FROM sources AS s
+        JOIN organisations AS o ON o.id = s.org_id
+        LEFT JOIN LATERAL (
+            SELECT v.id, v.version_label
+            FROM source_versions AS v
+            WHERE v.org_id = s.org_id AND v.source_id = s.id
+              AND v.approval_status = 'approved'
+              AND s.archived_at IS NULL
+              AND v.effective_from <= (now() AT TIME ZONE o.time_zone)::date
+              AND (v.effective_to IS NULL OR v.effective_to > (now() AT TIME ZONE o.time_zone)::date)
+            ORDER BY v.created_at DESC, v.id DESC
+            LIMIT 1
+        ) AS active ON true
+        LEFT JOIN LATERAL (
+            SELECT v.id
+            FROM source_versions AS v
+            WHERE v.org_id = s.org_id AND v.source_id = s.id
+              AND v.approval_status = 'approved'
+              AND (v.effective_from > (now() AT TIME ZONE o.time_zone)::date
+                   OR (v.effective_to IS NOT NULL AND v.effective_to <= (now() AT TIME ZONE o.time_zone)::date))
+            ORDER BY v.created_at DESC, v.id DESC
+            LIMIT 1
+        ) AS latest_approved ON true
+        LEFT JOIN LATERAL (
+            SELECT v.id, v.version_label, v.ingestion_status, v.approval_status,
+                   v.ingestion_error_code
+            FROM source_versions AS v
+            WHERE v.org_id = s.org_id AND v.source_id = s.id
+            ORDER BY v.created_at DESC, v.id DESC
+            LIMIT 1
+        ) AS latest ON true
+        WHERE s.org_id = :org_id
+          AND (CAST(:after AS uuid) IS NULL OR s.id > CAST(:after AS uuid))
+          AND (
+              CAST(:status AS text) IS NULL
+              OR (CAST(:status AS text) = 'active' AND active.id IS NOT NULL)
+              OR (CAST(:status AS text) = 'archived' AND s.archived_at IS NOT NULL)
+              OR (CAST(:status AS text) = 'expired' AND s.archived_at IS NULL AND active.id IS NULL AND latest_approved.id IS NOT NULL)
+              OR (CAST(:status AS text) = 'pending' AND s.archived_at IS NULL AND active.id IS NULL
+                  AND (latest.id IS NULL OR latest.approval_status = 'pending'))
+              OR (CAST(:status AS text) IN ('queued','processing','ready','failed')
+                  AND latest.ingestion_status = CAST(:status AS text))
+          )
+        ORDER BY s.id
+        LIMIT :limit
+    """), {"org_id": org_id, "status": status, "after": after, "limit": limit}).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def get_source_version(
+    db: Session, *, org_id: UUID, source_id: UUID, version_id: UUID
+) -> dict[str, Any] | None:
+    row = db.execute(text("""
+        SELECT s.id AS source_id, v.id AS version_id, s.title, s.category,
+               v.version_label, v.effective_from, v.effective_to,
+               v.ingestion_status, v.approval_status, v.ingestion_error_code,
+               v.r2_object_key IS NOT NULL AS original_available,
+               (SELECT count(*) FROM source_passages AS p
+                WHERE p.org_id = v.org_id AND p.source_id = v.source_id
+                  AND p.version_id = v.id) AS passage_count
+        FROM sources AS s
+        JOIN source_versions AS v
+          ON v.org_id = s.org_id AND v.source_id = s.id
+        WHERE s.org_id = :org_id AND s.id = :source_id AND v.id = :version_id
+    """), {"org_id": org_id, "source_id": source_id, "version_id": version_id}).mappings().first()
+    return dict(row) if row else None
+
+
+def get_source_original(
+    db: Session, *, org_id: UUID, source_id: UUID, version_id: UUID
+) -> dict[str, Any] | None:
+    row = db.execute(text("""
+        SELECT v.r2_object_key, v.mime_type
+        FROM sources AS s
+        JOIN source_versions AS v
+          ON v.org_id = s.org_id AND v.source_id = s.id
+        WHERE s.org_id = :org_id AND s.id = :source_id AND v.id = :version_id
+    """), {"org_id": org_id, "source_id": source_id, "version_id": version_id}).mappings().first()
+    return dict(row) if row else None
+
+
 def lock_org_for_approval(db: Session, *, org_id: UUID) -> dict[str, Any] | None:
     row = db.execute(text("""
         SELECT id, corpus_version, time_zone

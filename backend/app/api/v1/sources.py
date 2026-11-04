@@ -1,10 +1,12 @@
 """Administrator routes for uploading organisation guidance."""
 
 from collections.abc import Callable
+from io import BytesIO
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, Header, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Header, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
@@ -12,7 +14,14 @@ from app.api.v1.organisations import signed_in_user
 from app.core.errors import ApiError
 from app.db.session import get_session
 from app.integrations.r2 import R2Storage
-from app.schemas.sources import SourceApprovalRequest, SourceApprovalResponse, SourceUploadAccepted, SourceUploadMetadata
+from app.schemas.sources import (
+    SourceApprovalRequest,
+    SourceApprovalResponse,
+    SourceList,
+    SourceUploadAccepted,
+    SourceUploadMetadata,
+    SourceVersionDetail,
+)
 from app.services import sources
 from app.services.organisations import _require_role
 
@@ -24,6 +33,58 @@ MAX_UPLOAD_BYTES = 2 * 1024 * 1024
 def get_r2_storage_factory() -> Callable[[], R2Storage]:
     """Return a lazy adapter factory so authorization precedes configuration access."""
     return R2Storage
+
+
+@router.get("/{org_id}/sources", response_model=SourceList)
+def list_sources(
+    org_id: UUID,
+    status_filter: str | None = Query(default=None, alias="status"),
+    cursor: str | None = None,
+    limit: int = Query(default=20, ge=1, le=100),
+    user: dict = Depends(signed_in_user),
+    db: Session = Depends(get_session),
+) -> dict:
+    return sources.list_sources(
+        db, org_id=org_id, actor_id=user["id"], status=status_filter,
+        cursor=cursor, limit=limit,
+    )
+
+
+@router.get(
+    "/{org_id}/sources/{source_id}/versions/{version_id}",
+    response_model=SourceVersionDetail,
+)
+def get_source_version(
+    org_id: UUID,
+    source_id: UUID,
+    version_id: UUID,
+    user: dict = Depends(signed_in_user),
+    db: Session = Depends(get_session),
+) -> dict:
+    return sources.source_version(
+        db, org_id=org_id, source_id=source_id, version_id=version_id,
+        actor_id=user["id"],
+    )
+
+
+@router.get("/{org_id}/sources/{source_id}/versions/{version_id}/original")
+def get_source_original(
+    org_id: UUID,
+    source_id: UUID,
+    version_id: UUID,
+    user: dict = Depends(signed_in_user),
+    db: Session = Depends(get_session),
+    storage_factory: Callable[[], R2Storage] = Depends(get_r2_storage_factory),
+) -> StreamingResponse:
+    content, mime_type = sources.original_file(
+        db, storage_factory, org_id=org_id, source_id=source_id,
+        version_id=version_id, actor_id=user["id"],
+    )
+    return StreamingResponse(
+        BytesIO(content), media_type=mime_type,
+        headers={"Content-Disposition": 'attachment; filename="original"',
+                 "Cache-Control": "private, no-store"},
+    )
 
 
 @router.post(

@@ -1,5 +1,6 @@
 """Source upload lifecycle tests with fake storage and database writes."""
 
+import base64
 from datetime import date, datetime, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -48,6 +49,10 @@ class FakeStorage:
 
     def delete(self, key: str) -> None:
         self.deletes.append(key)
+
+    def get_bytes(self, key: str) -> bytes:
+        assert key.endswith("/original")
+        return b"original guidance"
 
 
 def metadata() -> SourceUploadMetadata:
@@ -344,3 +349,104 @@ def test_approval_http_and_openapi_contract(monkeypatch: pytest.MonkeyPatch) -> 
     assert response.json() == {"source_id": str(ORG_ID), "approved_version_id": str(ADMIN_ID), "corpus_version": 9}
     spec = client.get("/openapi.json").json()
     assert "/api/v1/organisations/{org_id}/sources/{source_id}/versions/{version_id}/approve" in spec["paths"]
+
+
+def test_source_list_service_filters_status_and_encodes_next_cursor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    allow_admin(monkeypatch, ["admin"])
+    source_id = UUID("55555555-5555-4555-8555-555555555555")
+    captured: dict = {}
+    monkeypatch.setattr(
+        sources.repo, "list_sources",
+        lambda _db, **kwargs: captured.update(kwargs) or [
+            {"source_id": source_id}, {"source_id": ORG_ID}
+        ],
+    )
+
+    result = sources.list_sources(
+        FakeDb(), org_id=ORG_ID, actor_id=ADMIN_ID, status="queued", cursor=None, limit=1,
+    )
+
+    assert captured == {"org_id": ORG_ID, "status": "queued", "after": None, "limit": 2}
+    assert result == {
+        "items": [{"source_id": source_id}],
+        "next_cursor": base64.urlsafe_b64encode(source_id.bytes).rstrip(b"=").decode(),
+    }
+
+
+def test_source_original_requires_admin_and_reads_private_object(monkeypatch: pytest.MonkeyPatch) -> None:
+    allow_admin(monkeypatch, ["admin"])
+    storage = FakeStorage()
+    monkeypatch.setattr(sources.repo, "get_source_original", lambda *_a, **_kw: {
+        "r2_object_key": f"org/{ORG_ID}/sources/source/versions/version/original",
+        "mime_type": "text/plain",
+    })
+
+    result = sources.original_file(
+        FakeDb(), storage, org_id=ORG_ID, source_id=ORG_ID,
+        version_id=ADMIN_ID, actor_id=ADMIN_ID,
+    )
+
+    assert result == (b"original guidance", "text/plain")
+
+
+def test_source_original_route_streams_attachment(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = Settings.model_construct(
+        DATABASE_URL=SecretStr("postgresql://unused"), SESSION_SECRET=SecretStr("test-secret"),
+        APP_ORIGIN="http://localhost:5173",
+    )
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_session] = lambda: FakeDb()
+    monkeypatch.setattr("app.main.get_settings", lambda: settings)
+    monkeypatch.setattr("app.api.v1.organisations.authentication.current_user",
+                        lambda *_args: {"id": ADMIN_ID, "email": "admin@example.com"})
+    monkeypatch.setattr(sources, "original_file", lambda *_a, **_kw: (b"original", "text/plain"))
+    client = TestClient(app)
+    client.cookies.set("veriloom_session_dev", "opaque-token")
+
+    response = client.get(
+        f"/api/v1/organisations/{ORG_ID}/sources/{ORG_ID}/versions/{ADMIN_ID}/original"
+    )
+
+    assert response.status_code == 200
+    assert response.content == b"original"
+    assert response.headers["content-type"] == "text/plain; charset=utf-8"
+    assert response.headers["content-disposition"] == 'attachment; filename="original"'
+
+
+def test_source_status_endpoints_and_openapi_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = Settings.model_construct(
+        DATABASE_URL=SecretStr("postgresql://unused"), SESSION_SECRET=SecretStr("test-secret"),
+        APP_ORIGIN="http://localhost:5173",
+    )
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_session] = lambda: FakeDb()
+    monkeypatch.setattr("app.main.get_settings", lambda: settings)
+    monkeypatch.setattr("app.api.v1.organisations.authentication.current_user",
+                        lambda *_args: {"id": ADMIN_ID, "email": "admin@example.com"})
+    monkeypatch.setattr(sources, "list_sources", lambda *_a, **_kw: {"items": [], "next_cursor": None})
+    monkeypatch.setattr(sources, "source_version", lambda *_a, **_kw: {
+        "source_id": ORG_ID, "version_id": ADMIN_ID, "title": "Guide",
+        "category": "guidelines", "version_label": "1.0", "effective_from": date(2026, 11, 3),
+        "effective_to": None, "ingestion_status": "ready", "approval_status": "pending",
+        "ingestion_error_code": None, "passage_count": 2, "original_available": True,
+    })
+    client = TestClient(app)
+    client.cookies.set("veriloom_session_dev", "opaque-token")
+
+    listing = client.get(f"/api/v1/organisations/{ORG_ID}/sources?status=pending&limit=5")
+    assert listing.status_code == 200
+    assert listing.json() == {"items": [], "next_cursor": None}
+    detail = client.get(
+        f"/api/v1/organisations/{ORG_ID}/sources/{ORG_ID}/versions/{ADMIN_ID}"
+    )
+    assert detail.status_code == 200
+    assert detail.json()["ingestion_status"] == "ready"
+    assert detail.json()["passage_count"] == 2
+    spec = client.get("/openapi.json").json()["paths"]
+    assert "/api/v1/organisations/{org_id}/sources" in spec
+    assert "/api/v1/organisations/{org_id}/sources/{source_id}/versions/{version_id}" in spec
+    assert "/api/v1/organisations/{org_id}/sources/{source_id}/versions/{version_id}/original" in spec

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import base64
 from collections.abc import Callable
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -25,6 +26,71 @@ from app.schemas.sources import SourceApprovalRequest, SourceUploadAccepted, Sou
 from app.services.organisations import _require_role
 
 IDEMPOTENCY_ENDPOINT = "/organisations/{org_id}/sources"
+SOURCE_STATUSES = {"active", "archived", "expired", "pending", "queued", "processing", "ready", "failed"}
+
+
+def _source_cursor(cursor: str | None) -> UUID | None:
+    if cursor is None:
+        return None
+    try:
+        return UUID(bytes=base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
+    except (ValueError, TypeError) as exc:
+        raise ApiError(422, "invalid_cursor", "The page cursor is invalid.") from exc
+
+
+def list_sources(
+    db: Session, *, org_id: UUID, actor_id: UUID, status: str | None,
+    cursor: str | None, limit: int,
+) -> dict:
+    _require_role(db, org_id, actor_id, {"admin"})
+    if status is not None and status not in SOURCE_STATUSES:
+        raise ApiError(422, "invalid_source_status", "The source status is invalid.")
+    rows = repo.list_sources(
+        db, org_id=org_id, status=status, after=_source_cursor(cursor), limit=limit + 1,
+    )
+    more = len(rows) > limit
+    items = rows[:limit]
+    next_cursor = (
+        base64.urlsafe_b64encode(items[-1]["source_id"].bytes).rstrip(b"=").decode()
+        if more else None
+    )
+    return {"items": items, "next_cursor": next_cursor}
+
+
+def source_version(
+    db: Session, *, org_id: UUID, source_id: UUID, version_id: UUID, actor_id: UUID,
+) -> dict:
+    _require_role(db, org_id, actor_id, {"admin"})
+    result = repo.get_source_version(
+        db, org_id=org_id, source_id=source_id, version_id=version_id,
+    )
+    if result is None:
+        raise ApiError(404, "not_found", "The requested resource was not found.")
+    return result
+
+
+def original_file(
+    db: Session, storage: R2Storage | Callable[[], R2Storage], *,
+    org_id: UUID, source_id: UUID, version_id: UUID, actor_id: UUID,
+) -> tuple[bytes, str]:
+    _require_role(db, org_id, actor_id, {"admin"})
+    result = repo.get_source_original(
+        db, org_id=org_id, source_id=source_id, version_id=version_id,
+    )
+    if result is None:
+        raise ApiError(404, "not_found", "The requested resource was not found.")
+    if not result["r2_object_key"]:
+        raise ApiError(404, "not_found", "The requested resource was not found.")
+    if callable(storage):
+        try:
+            storage = storage()
+        except R2ConfigurationError as exc:
+            raise ApiError(503, "storage_unavailable", "Original file storage is not configured.") from exc
+    try:
+        content = storage.get_bytes(result["r2_object_key"])
+    except R2StorageError as exc:
+        raise ApiError(503, "storage_unavailable", "The original file could not be retrieved.") from exc
+    return content, result["mime_type"]
 
 
 def approve_source_version(
