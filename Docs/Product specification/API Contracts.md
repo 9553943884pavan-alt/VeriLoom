@@ -66,8 +66,8 @@
 | `POST /auth/login` | Public | `{email,password}` | `200 {user_id, memberships}`; sets session cookie. |
 | `GET /auth/me` | Signed in | — | `200 {user_id,email,display_name,memberships,csrf_token}`. |
 | `POST /auth/logout` | Signed in | `{}` | `204`; revokes session and clears cookie. |
-| `GET /organisations` | Signed in | — | `200 {items:[{org_id,name,roles}],next_cursor}`. |
-| `POST /organisations` | Signed in | `{name,time_zone:"UTC"}`; `time_zone` is an IANA zone and defaults to `UTC` | `201 {org_id,name,time_zone,roles:["admin"]}`; caller becomes first admin. |
+| `GET /organisations` | Signed in | — | `200 {items:[{org_id,name,roles,corpus_version}],next_cursor}`. |
+| `POST /organisations` | Signed in | `{name,time_zone:"UTC"}`; `time_zone` is an IANA zone and defaults to `UTC` | `201 {org_id,name,time_zone,roles:["admin"],corpus_version}`; caller becomes first admin. |
 | `GET /organisations/{org_id}/members` | Admin | Pagination | `200` member list. |
 | `GET /organisations/{org_id}/reviewers` | Creator or Admin | Cursor, limit | `200 {items:[{user_id,display_name}],next_cursor}` of active Reviewers in the org, excluding the current user; lets a Creator choose `reviewer_user_id` without exposing the full member list. |
 | `POST /organisations/{org_id}/invitations` | Admin | `{email:"creator@example.com",role:"creator",expires_in_hours:24}` or role `reviewer` | `201 {invitation_token,expires_at}`; token shown once, shared manually with that email's owner. No email delivery integration in MVP. |
@@ -90,6 +90,8 @@ Passwords are hashed with a current password hash such as Argon2id; store only t
 **No self-approval:** if the same user has both creator and reviewer roles, a review assigned to that user cannot approve their own submitted revision. An admin who also needs to review must be explicitly granted `reviewer` and assigned.
 
 ## 4. Source ingestion and evidence contracts
+
+Organisation create/list responses expose the current `corpus_version` for source approval/archive optimistic concurrency. Refresh the organisation list after source mutations or a `409`; never guess or increment the expected version in the browser.
 
 One `source` is a logical document; a `source_version` is an immutable uploaded snapshot. An admin upload creates a **pending** version, never searchable until ingestion succeeds and an admin approves it. Replacing an approved source creates a new version; approval atomically archives the previous active version, activates the new one, and increments `organisation.corpus_version`. For the MVP, approval requires `effective_from <= today` in the organisation's configured time zone; future versions stay pending until their effective date. Validity uses the half-open interval `[effective_from, effective_to)`. Old passages remain readable for historical citations but are excluded from new retrieval.
 
@@ -182,6 +184,7 @@ Idempotency-Key: 3b41ba7c-ef06-4e32-b470-145c0b81a693
   "review_version": 1,
   "reviewed_against_corpus_version": 3,
   "findings": [],
+  "decision": null,
   "failure": null,
   "created_at": "2026-11-04T08:00:00Z",
   "completed_at": "2026-11-04T08:00:09Z"
@@ -189,6 +192,8 @@ Idempotency-Key: 3b41ba7c-ef06-4e32-b470-145c0b81a693
 ```
 
 `coverage` is `sufficient | partial | insufficient`; `coverage_reason` is null for sufficient coverage and a nonempty explanation for partial or insufficient coverage. A nonempty `findings` array uses the Finding shape below. `failure` is null except when `state="failed"`, where it contains a safe `{code,message,retryable}` object. The review stores the source corpus version used at job start; a source approval during processing does not silently change that review's evidence snapshot.
+
+`decision` is null before a human decision. Afterwards it contains `{decision_id,action,comment,override_reason,decided_by_user_id,decided_at}` for this review's latest human decision, where `action` is `request_changes` or `approve`. The owner Creator and assigned Reviewer can read it through the same participant-authorised review detail route. Show the change-request comment and any recorded approval override with actor/time so the Creator can act on the reviewer's actual feedback; they remain attached to the immutable revision. This field does not merge decisions into the separate comment conversation.
 
 **Finding shape:** for the illustrative immutable revision text `Try our best Jaggery Cold Coffee in India today!`, the anchor points to `best Jaggery Cold Coffee in India` and the proposed replacement yields `Try our Jaggery Cold Coffee today!`.
 

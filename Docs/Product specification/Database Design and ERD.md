@@ -157,7 +157,8 @@ Lock review and draft. Verify assigned reviewer, current `revision_id`, `expecte
 | `004_review` | Drafts, revisions, reviews, review evidence, findings/citations, turns/evidence/citations, comments, decisions. Add the `drafts.current_revision_id` FK after `draft_revisions` exists. | Keep submitted revisions and audit records; avoid destructive down migrations in production. |
 | `005_jobs` | Jobs and idempotency records; worker indexes. | Drain or stop workers before structural changes. |
 | `006_source_version_metadata` | Add immutable title/category snapshots to source versions and backfill existing rows from their logical source; activate replacement metadata only on approval. | Forward repair if a backfill needs correction; do not drop version metadata used by ingestion. |
-| `007_vector_index_optional` | HNSW index only after measured need and database capacity check. | `DROP INDEX` can remove this optional index without losing data. |
+| `007_provider_attribution` | Add nullable review/answer provider IDs and separate rewrite provider/model IDs; backfill only attributable completed historical Sarvam calls. | Historical attribution is audit data; repair forward. |
+| `008_vector_index_optional` | HNSW index only after measured need and database capacity check. | `DROP INDEX` can remove this optional index without losing data. |
 
 Use Alembic and inspect generated SQL. If an index is created `CONCURRENTLY`, run that migration outside a surrounding transaction, as PostgreSQL requires. Apply schema migrations before deploying API/worker code that depends on them. Back up the database and R2 object-key inventory before any destructive migration.
 
@@ -185,6 +186,12 @@ The product plan does not specify a legal retention duration. Make it a configur
 - Citation rows reference immutable passages and snapshot the text shown to the user. Archiving a source does not erase old review evidence.
 - Two concurrent draft edits, source approvals, or review decisions yield one winner and a `409` stale-version response for the loser. Repeated POSTs with the same key and body create one resource/job.
 - A finding anchor is either absent or matches the NFC revision text at Unicode code-point offsets. A suggested edit is stored as a proposal; it never silently changes `working_content`.
+
+### Provider attribution extension (migration 007)
+
+The existing `decisions` rows also supply the latest human decision in authorised review-detail responses. Read them by `(org_id,review_id)` with deterministic latest ordering; expose the comment/override, actor and timestamp without duplicating them as conversation comments. No new database field is needed for this response extension.
+
+`reviews.provider_id` and `chat_turns.provider_id` are nullable text fields constrained to `sarvam` or `indierouter`. Their paired `model_id` identifies the provider/model that actually returned the validated review or answer, rather than the configured primary. `chat_turns.rewrite_provider_id` and `rewrite_model_id` independently record a validated query rewrite; a rewrite and answer can use different providers. Paths without a model call retain null answer/review attribution. Existing ambiguous/failed history is not assigned a provider. These fields are internal audit metadata, not new public response fields.
 
 ## Reference boundaries
 

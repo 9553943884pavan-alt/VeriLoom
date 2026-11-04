@@ -1,10 +1,29 @@
 # VeriLoom project structure
 
-**Status:** proposed Round 2 repository layout. This file names implementation files to create; it does not claim that the backend or frontend already exists. Keep the existing `Docs/` and `data/` files in place. Build the text-only workflow first, then add later formats only when the core flow works.
+**Status:** Round 2 destination map with implemented slices recorded below. The backend and initial React frontend now exist; unimplemented entries in the original tree remain planned. Keep the existing `Docs/` and `data/` files in place. Build the text-only workflow first, then add later formats only when the core flow works.
 
 This is a destination map, not a request to create every empty file at once. Add a module when its vertical slice is implemented, and merge very small modules if separate files would add navigation cost for a solo builder.
 
 ## 1. Repository tree
+
+### Implemented compact MVP modules
+
+Small related screens are deliberately grouped within feature modules, following the modularity rule below. Split them further when their size or reuse warrants it.
+
+| Path | Responsibility |
+|---|---|
+| `frontend/src/main.tsx`, `app/App.tsx`, `app/context.ts` | Application providers, routing, authentication and organisation context, membership/invitation screens. |
+| `frontend/src/features/auth/Auth.tsx` | Login/register forms with React Hook Form and Zod. |
+| `frontend/src/features/sources/Sources.tsx` | Text guidance upload, processing, approval and archive. |
+| `frontend/src/features/drafts/Drafts.tsx` | Creator working copy, immutable history, reviewer inbox. |
+| `frontend/src/features/reviews/Reviews.tsx` | Findings, citations, questions, comments, human decisions. |
+| `frontend/src/components/ui.tsx` | Shared forms, error/status rendering, cursor pagination and polling. |
+| `frontend/src/lib/api/client.ts`, `lib/types.ts`, `lib/anchors.ts` | Same-origin HTTP/CSRF, contract types and code-point suggestion guards; adjacent `*.test.ts` files. |
+| `frontend/src/style.css` | Tailwind import and responsive visual styles. |
+| `frontend/{package.json,package-lock.json,tsconfig.json,vite.config.ts,eslint.config.js,index.html}` | Pinned frontend toolchain and Vite API proxy. |
+| `backend/scripts/evaluate_hybrid_mvp.py`, `Docs/HYBRID_EVALUATION.md` | Reproducible E5 hybrid evaluation with explicit SQL simulation and optional bounded synthetic generation. |
+| `backend/tests/integration/live_source_sql_smoke.py` | Disposable database checks for migrations 006/007, source lifecycle/evidence and provider provenance. |
+| `backend/tests/unit/test_review_decision_read.py` | Participant access, nullable human decision summary and decision query scope. |
 
 `[existing]` means the file is already in the workspace. `[planned]` means it belongs to the implementation plan; every child of a planned directory is also planned. Unmarked children of an existing directory already exist unless labelled otherwise. Descriptive Alembic revision names below may gain generated revision IDs.
 
@@ -86,7 +105,8 @@ VeriLoom/
 │   │       ├── 004_review.py
 │   │       ├── 005_jobs.py
 │   │       ├── 006_source_version_metadata.py     snapshot replacement metadata per version
-│   │       └── 007_vector_index_optional.py      add only after measurement
+│   │       ├── 007_provider_attribution.py       persist winning review/answer provider
+│   │       └── 008_vector_index_optional.py      add only after measurement
 │   ├── app/
 │   │   ├── __init__.py
 │   │   ├── main.py                                FastAPI creation and router mounting
@@ -160,7 +180,7 @@ VeriLoom/
 │   │   │   ├── r2.py                             private object storage adapter
 │   │   │   ├── sarvam.py                         server-side V2 chat adapter
 │   │   │   ├── openai_compatible.py              configurable verified fallback adapter
-│   │   │   └── failover.py                       synthetic-only provider failover chain
+│   │   │   └── failover.py                       Sarvam-first provider failover chain
 │   │   └── jobs/
 │   │       ├── queue.py                          PostgreSQL job claiming and retries
 │   │       ├── worker.py                         separate Render worker entry point

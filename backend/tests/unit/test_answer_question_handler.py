@@ -102,6 +102,8 @@ def test_followup_snapshots_before_provider_and_publishes_exact_citation(monkeyp
 
     db = FakeDB()
     chat = Chat(db)
+    chat.last_provider = "indierouter"
+    chat.last_model = "fallback-model"
     monkeypatch.setattr(handler, "retrieve_evidence", lambda *args, **kwargs: evidence())
     answer_question(db, org_id=ORG, turn_id=TURN, embedder=Embedder(), chat=chat,
                     today=date(2026, 11, 4))
@@ -111,6 +113,8 @@ def test_followup_snapshots_before_provider_and_publishes_exact_citation(monkeyp
     assert next(p for sql, p in db.calls if "INSERT INTO chat_evidence" in sql)["supplied_text"] == "Do not say best."
     assert next(p for sql, p in db.calls if "INSERT INTO chat_citations" in sql)["excerpt"] == "Do not say best."
     assert any("state='completed'" in sql for sql, _ in db.calls)
+    published = next(p for sql, p in db.calls if "answer_status=:answer_status" in sql)
+    assert (published["provider_id"], published["model_id"]) == ("indierouter", "fallback-model")
 
 
 def test_no_current_evidence_abstains_without_provider(monkeypatch):
@@ -122,6 +126,8 @@ def test_no_current_evidence_abstains_without_provider(monkeypatch):
     answer_question(db, org_id=ORG, turn_id=TURN, embedder=Embedder(), chat=chat,
                     today=date(2026, 11, 4))
     assert chat.calls == 0
+    published = next(p for sql, p in db.calls if "answer_status=:answer_status" in sql)
+    assert (published["provider_id"], published["model_id"]) == (None, None)
     assert not any("INSERT INTO chat_citations" in sql for sql, _ in db.calls)
     assert next(p for sql, p in db.calls if "answer_status=:answer_status" in sql)["answer_status"] == "insufficient_evidence"
 
@@ -141,3 +147,31 @@ def test_rewrite_guard_preserves_numbers_negation_and_quoted_terms():
     assert _preserves_terms('Was "best" not allowed in 2026?', 'Was "best" not allowed in 2026?')
     assert not _preserves_terms('Was "best" not allowed in 2026?', 'Was best allowed in 2026?')
     assert not _preserves_terms('Was 2026 price approved?', 'Was price approved?')
+
+
+def test_rewrite_and_answer_record_independent_provider_models(monkeypatch):
+    from types import SimpleNamespace
+    import app.jobs.handlers.answer_question as handler
+
+    db = FakeDB()
+
+    class MixedChat(Chat):
+        def complete_json(self, messages, *, schema_name, schema, max_tokens):
+            if schema_name == "veriloom_rewrite_followup_v2":
+                self.last_provider, self.last_model = "indierouter", "rewrite-model"
+                return {"needs_clarification": False, "standalone_query": "May we say best?",
+                        "clarification_question": None}
+            result = super().complete_json(messages, schema_name=schema_name,
+                                           schema=schema, max_tokens=max_tokens)
+            self.last_provider, self.last_model = "sarvam", "answer-model"
+            return result
+
+    monkeypatch.setattr(handler, "route_followup", lambda *_args, **_kw:
+                        SimpleNamespace(route="rewrite_retrieve"))
+    monkeypatch.setattr(handler, "retrieve_evidence", lambda *args, **kwargs: evidence())
+    answer_question(db, org_id=ORG, turn_id=TURN, embedder=Embedder(), chat=MixedChat(db),
+                    today=date(2026, 11, 4))
+    snapshot = next(p for sql, p in db.calls if "rewrite_provider_id=:rewrite_provider_id" in sql)
+    published = next(p for sql, p in db.calls if "answer_status=:answer_status" in sql)
+    assert (snapshot["rewrite_provider_id"], snapshot["rewrite_model_id"]) == ("indierouter", "rewrite-model")
+    assert (published["provider_id"], published["model_id"]) == ("sarvam", "answer-model")

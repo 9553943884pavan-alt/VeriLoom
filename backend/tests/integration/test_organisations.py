@@ -37,6 +37,16 @@ def test_org_creation_validates_iana_zone_and_roles() -> None:
         UpdateMemberRolesRequest(roles=["admin", "admin"])
 
 
+def test_organisation_responses_expose_corpus_version() -> None:
+    from app.schemas.organisations import OrganisationCreated, OrganisationList
+
+    row = {"org_id": ORG_ID, "name": "Demo", "roles": ["admin"], "corpus_version": 4}
+    assert OrganisationList(items=[row], next_cursor=None).items[0].corpus_version == 4
+    assert OrganisationCreated(**row, time_zone="UTC").corpus_version == 4
+    with pytest.raises(ValidationError):
+        OrganisationCreated(**{**row, "corpus_version": -1}, time_zone="UTC")
+
+
 def test_member_and_reviewer_access_is_tenant_scoped(monkeypatch) -> None:
     db = FakeDb()
     monkeypatch.setattr(service.repo, "active_role", lambda _db, _org, _user: None)

@@ -131,7 +131,7 @@ Keep the original revision text read-only in the Reviewer workspace even after a
 - Map `401` to sign-in, `403` to access denied, cross-org `404` to not found, `409` to a refresh-and-review prompt, `413`/`415` to upload guidance, and `429` to a retry timer. For `502`/`503`/`504`, keep unsaved form values in memory and show retry plus request ID.
 - Use semantic headings and labels, visible focus, keyboard-operable dialogs, contrast-checked status badges, and `aria-live="polite"` for asynchronous status changes. Do not rely on color alone to distinguish severity, processing, failure, or approval.
 - Render source, draft, finding, and model text as plain text. If Markdown is later supported, disable raw HTML and sanitize links and output. Avoid `dangerouslySetInnerHTML`. Use `rel="noopener noreferrer"` on external links.
-- Show a brief disclosure near submission that selected draft text and approved source passages are sent from the backend to Sarvam AI for review, consistent with the product plan. Do not claim that external processing never occurs.
+- Show a brief disclosure near submission that selected draft text and approved source passages are sent from the backend to Sarvam AI, with IndieRouter used when configured after exhausted transient Sarvam retries. Follow-up context may also be sent. Do not claim that external processing never occurs.
 - On logout, clear cached private resources and in-memory CSRF. Do not store draft bodies, source passages, chat turns, or session tokens in `localStorage`, analytics payloads, or client error logs.
 
 ## 10. Suggested source layout and build order
@@ -164,6 +164,8 @@ Minimum meaningful checks:
 ## 12. Contract gaps and future scope
 
 The API contract now includes a Creator-accessible Reviewer picker and participant-scoped, paginated comment history. Implement these routes before connecting the corresponding screens; the frontend must not substitute the Admin-only member list or keep comments solely in browser memory.
+
+Review detail also returns nullable `decision` with action, comment, override reason, actor and timestamp. Display it in both the Creator's revision history and the Reviewer workspace. A `changes_requested` badge alone is insufficient: the Creator must be able to read the human's change request after reload. Keep this decision separate from the comment conversation and AI findings.
 
 Later additions include PDF/image input, visual asset inspection, rich-text editing, notifications, offline drafts, analytics, and advanced search. They do not change the text MVP's core boundary: approved evidence and immutable revisions anchor every review decision.
 

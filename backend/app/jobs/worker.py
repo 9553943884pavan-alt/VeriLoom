@@ -6,7 +6,8 @@ import logging
 import os
 import socket
 import threading
-from sqlalchemy import text
+from sqlalchemy import event, text
+from contextlib import contextmanager
 from collections.abc import Callable, Mapping
 from uuid import uuid4
 
@@ -16,11 +17,72 @@ from app.db.session import get_engine
 from app.jobs.handlers.ingest_source import IngestionFailure, build_ingestion_dependencies, ingest_source
 from app.jobs.handlers.answer_question import AnswerFailure, answer_question, build_answer_dependencies
 from app.jobs.handlers.review_revision import ReviewFailure, build_review_dependencies, review_revision
-from app.jobs.queue import Job, claim_job, complete_job, fail_exhausted_leases, fail_job
+from app.jobs.queue import Job, claim_job, complete_job, fail_exhausted_leases, fail_job, renew_lease
 
 logger = logging.getLogger(__name__)
 SessionFactory = Callable[[], Session]
 JobHandler = Callable[[Session, Job], None]
+
+
+class LeaseLost(RuntimeError):
+    """The worker can no longer safely publish this attempt."""
+
+
+@contextmanager
+def _lease_heartbeat(session_factory: SessionFactory, db: Session, job: Job,
+                     worker_id: str, lease_seconds: int):
+    stop, lost = threading.Event(), threading.Event()
+
+    def guard_commit(session):
+        if lost.is_set():
+            raise LeaseLost("job lease renewal failed")
+        # Lock ownership in the publishing transaction. Reclaim cannot race the
+        # commit, and wall-clock time must be checked after lengthy provider I/O.
+        try:
+            owned = session.execute(text("""
+                SELECT id FROM jobs
+                WHERE id = :job_id AND org_id = :org_id AND state = 'running'
+                  AND worker_id = :worker_id AND lease_until > clock_timestamp()
+                FOR UPDATE
+            """), {"job_id": job.id, "org_id": job.org_id,
+                   "worker_id": worker_id}).scalar_one_or_none()
+        except Exception:
+            lost.set()
+            raise LeaseLost("job lease ownership could not be verified") from None
+        if owned is None:
+            lost.set()
+            raise LeaseLost("job lease ownership expired")
+
+    def renew():
+        while not stop.wait(lease_seconds / 3):
+            try:
+                with session_factory() as heartbeat_db:
+                    if not renew_lease(heartbeat_db, org_id=job.org_id, job_id=job.id,
+                                       worker_id=worker_id, lease_seconds=lease_seconds):
+                        heartbeat_db.rollback()
+                        lost.set()
+                        return
+                    heartbeat_db.commit()
+            except Exception:
+                # Uncertain ownership is unsafe too. Do not log provider/db text.
+                lost.set()
+                logger.warning("Job lease renewal failed", extra={"job_id": str(job.id)})
+                return
+
+    # Guard the handlers' internal publish commits as well as the outer commit.
+    event.listen(db, "before_commit", guard_commit)
+    thread = threading.Thread(target=renew, name="job-lease-heartbeat", daemon=True)
+    try:
+        thread.start()
+        try:
+            yield lost
+        finally:
+            stop.set()
+            thread.join()
+            if lost.is_set():
+                raise LeaseLost("job lease renewal failed")
+    finally:
+        event.remove(db, "before_commit", guard_commit)
 
 
 def default_worker_id() -> str:
@@ -103,13 +165,23 @@ def run_once(
             return False
         try:
             handler = handlers[job.kind]
-            handler(db, job)
-            db.commit()
+            with _lease_heartbeat(session_factory, db, job, worker_id, lease_seconds):
+                try:
+                    handler(db, job)
+                    db.commit()
+                except BaseException:
+                    # Release a failed publishing transaction's ownership lock
+                    # before joining a renewal that may be waiting for that row.
+                    db.rollback()
+                    raise
             if not complete_job(db, org_id=job.org_id, job_id=job.id, worker_id=worker_id):
                 db.rollback()
                 logger.warning("Job lease expired before completion", extra={"job_id": str(job.id)})
             else:
                 db.commit()
+        except LeaseLost:
+            db.rollback()
+            logger.warning("Job ownership lost; attempt abandoned", extra={"job_id": str(job.id)})
         except (IngestionFailure, ReviewFailure, AnswerFailure) as exc:
             db.rollback()
             state = fail_job(

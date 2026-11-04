@@ -1,7 +1,7 @@
 # Prompt Engineering Specification
 
 **Status:** proposed Round 2 implementation specification. Prompt text and output rules are versioned; no measured model performance is claimed.  
-**Owner:** FastAPI worker's Sarvam adapter. The browser never constructs or sends prompts directly.  
+**Owner:** FastAPI worker's Sarvam-first adapter, with the approved optional IndieRouter fallback after exhausted transient retries. The browser never constructs or sends prompts directly.
 **Contract:** [API Contracts.md](API%20Contracts.md) defines public JSON, permissions, and review states. This document defines the private model-facing requests that produce candidate findings and follow-up answers.
 
 ## 1. Prompting boundaries

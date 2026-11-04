@@ -54,6 +54,8 @@ class SarvamChat:
         self._settings = settings or get_settings()
         self._api_key = self._settings.SARVAM_API_KEY.get_secret_value()
         self._model = self._settings.SARVAM_MODEL
+        self.last_provider: str | None = None
+        self.last_model: str | None = None
         if not self._model:
             raise SarvamConfigurationError("Sarvam model is not configured.")
         if not self._api_key and client is None:
@@ -93,6 +95,8 @@ class SarvamChat:
         if not 1 <= max_tokens <= MAX_OUTPUT_TOKENS:
             raise ValueError(f"max_tokens must be between 1 and {MAX_OUTPUT_TOKENS}.")
 
+        self.last_provider = None
+        self.last_model = None
         body = {
             "model": self._model,
             "messages": [dict(message) for message in messages],
@@ -130,6 +134,8 @@ class SarvamChat:
             raise SarvamResponseError("Sarvam returned invalid JSON.") from None
         if not isinstance(decoded, dict):
             raise SarvamResponseError("Sarvam returned invalid JSON.")
+        self.last_provider = "sarvam"
+        self.last_model = self._model
         return decoded
 
     def _post_with_retries(self, body: dict[str, Any]) -> httpx.Response:

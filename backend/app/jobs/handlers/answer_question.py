@@ -14,6 +14,8 @@ from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.integrations.failover import SarvamFirstChat, build_worker_chat, completed_provenance
+from app.integrations.openai_compatible import OpenAICompatibleError
 from app.integrations.sarvam import SarvamChat, SarvamError
 from app.jobs.handlers.review_revision import SYSTEM_PROMPT
 from app.rag.answer_validation import RewriteCandidate, validate_answer
@@ -176,6 +178,8 @@ def _select(db: Session, *, org_id: UUID, turn_id: UUID, embedder: FollowupEmbed
     route = choice.route
     query: str | None = None
     clarification: str | None = None
+    rewrite_provider_id: str | None = None
+    rewrite_model_id: str | None = None
     context = {"question": turn["question"], "finding": dict(finding) if finding else None,
                "recent_turns": recent}
     if route == "rewrite_retrieve":
@@ -186,7 +190,8 @@ def _select(db: Session, *, org_id: UUID, turn_id: UUID, embedder: FollowupEmbed
                  {"role": "user", "content": json.dumps(context, ensure_ascii=False, default=str)}],
                 schema_name="veriloom_rewrite_followup_v2", schema=REWRITE_SCHEMA, max_tokens=4096,
             ))
-        except SarvamError as exc:
+            rewrite_provider_id, rewrite_model_id = completed_provenance(chat)
+        except (SarvamError, OpenAICompatibleError) as exc:
             raise AnswerFailure("rewrite_provider_error", retryable=True) from exc
         except (ValidationError, ValueError, TypeError) as exc:
             raise AnswerFailure("invalid_rewrite_output") from exc
@@ -238,21 +243,24 @@ def _select(db: Session, *, org_id: UUID, turn_id: UUID, embedder: FollowupEmbed
         UPDATE chat_turns SET state='processing',route=:route,rewritten_query=:query,
           reviewed_against_corpus_version=:corpus_version,evidence_as_of_date=:as_of,
           router_version=:router_version,rewrite_prompt_version=:rewrite_version,
-          answer_prompt_version=:answer_version,model_id=:model_id,error_code=NULL
+          answer_prompt_version=:answer_version,model_id=NULL,provider_id=NULL,
+          rewrite_provider_id=:rewrite_provider_id,rewrite_model_id=:rewrite_model_id,
+          error_code=NULL
         WHERE org_id=:org_id AND id=:turn_id
     """), {"org_id": org_id, "turn_id": turn_id, "route": route, "query": query,
            "corpus_version": turn["corpus_version"], "as_of": as_of,
            "router_version": ROUTER_VERSION,
            "rewrite_version": REWRITE_VERSION if choice.route == "rewrite_retrieve" else None,
            "answer_version": ANSWER_VERSION if route not in {"clarify", "abstain"} else None,
-           "model_id": chat.model})
+           "rewrite_provider_id": rewrite_provider_id, "rewrite_model_id": rewrite_model_id})
     db.commit()
     return turn, passages, recent, route, clarification, query
 
 
 def _publish(db: Session, *, org_id: UUID, turn_id: UUID, turn: dict[str, Any],
              passages: list[dict[str, Any]], route: str, answer_status: str,
-             answer: str, citations: Sequence[Any]) -> None:
+             answer: str, citations: Sequence[Any], provider_id: str | None,
+             model_id: str | None) -> None:
     current = db.execute(text("""
         SELECT t.state,r.revision_id,d.current_revision_id
         FROM chat_turns t JOIN reviews r ON r.org_id=t.org_id AND r.id=t.review_id
@@ -282,10 +290,12 @@ def _publish(db: Session, *, org_id: UUID, turn_id: UUID, turn: dict[str, Any],
                "effective_from": passage["effective_from"], "sort_order": index})
     db.execute(text("""
         UPDATE chat_turns SET state='completed',route=:route,answer_status=:answer_status,
+          provider_id=:provider_id,model_id=:model_id,
           answer=:answer,validator_outcome='passed_exact_quote_checks',answered_at=now()
         WHERE org_id=:org_id AND id=:turn_id AND state='processing'
     """), {"org_id": org_id, "turn_id": turn_id, "route": route,
-           "answer_status": answer_status, "answer": answer})
+           "answer_status": answer_status, "answer": answer,
+           "provider_id": provider_id, "model_id": model_id})
     db.commit()
 
 
@@ -298,6 +308,8 @@ def answer_question(db: Session, *, org_id: UUID, turn_id: UUID,
     )
     if route == "completed":
         return
+    provider_id: str | None = None
+    model_id: str | None = None
     if route == "clarify":
         status, answer, citations = "clarification_needed", (
             clarification or "Which claim or finding do you mean?"), []
@@ -326,21 +338,23 @@ def answer_question(db: Session, *, org_id: UUID, turn_id: UUID,
                 schema_name="veriloom_grounded_answer_v2", schema=ANSWER_SCHEMA, max_tokens=4096,
             )
             validated = validate_answer(raw, current_passages={p["passage_id"]: p["text"] for p in passages})
-        except SarvamError as exc:
+            provider_id, model_id = completed_provenance(chat)
+        except (SarvamError, OpenAICompatibleError) as exc:
             raise AnswerFailure("answer_provider_error", retryable=True) from exc
         except (ValidationError, ValueError, TypeError) as exc:
             raise AnswerFailure("invalid_answer_output") from exc
         status, answer, citations = (validated.candidate.answer_status,
                                       validated.candidate.answer, validated.candidate.evidence)
     _publish(db, org_id=org_id, turn_id=turn_id, turn=turn, passages=passages,
-             route=route, answer_status=status, answer=answer, citations=citations)
+             route=route, answer_status=status, answer=answer, citations=citations,
+             provider_id=provider_id, model_id=model_id)
 
 
-def build_answer_dependencies() -> tuple[FollowupEmbedder, SarvamChat]:
+def build_answer_dependencies() -> tuple[FollowupEmbedder, SarvamChat | SarvamFirstChat]:
     from app.core.config import get_settings
     from app.rag.embeddings import MODEL_NAME, get_embedder
 
     settings = get_settings()
     if settings.EMBEDDING_MODEL != MODEL_NAME:
         raise RuntimeError("The configured embedding model does not match the pinned E5 adapter.")
-    return get_embedder(), SarvamChat(settings)
+    return get_embedder(), build_worker_chat(settings)

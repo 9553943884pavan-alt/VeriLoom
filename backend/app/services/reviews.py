@@ -35,7 +35,8 @@ def get(db: Session, *, org_id: UUID, review_id: UUID, user_id: UUID) -> dict:
     for finding in findings:
         start, end, quote = finding.pop("anchor_start"), finding.pop("anchor_end"), finding.pop("quote")
         finding["anchor"] = {"start_codepoint":start,"end_codepoint":end,"quote":quote} if start is not None else None
-    return {k:v for k,v in {**row,"findings":findings,"failure":failure}.items()
+    decision = repo.latest_decision(db, org_id=org_id, review_id=review_id)
+    return {k:v for k,v in {**row,"findings":findings,"failure":failure,"decision":decision}.items()
             if k not in {"creator_user_id", "error_code", "current_revision_id"}}
 
 

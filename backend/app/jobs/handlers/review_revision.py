@@ -14,6 +14,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.integrations.failover import SarvamFirstChat, build_worker_chat, completed_provenance
+from app.integrations.openai_compatible import OpenAICompatibleError
 from app.integrations.sarvam import SarvamChat
 from app.rag.retrieval.hybrid import CorpusChanged, EvidencePassage, retrieve_evidence
 from app.rag.review_validation import ValidatedReview, validate_review
@@ -259,11 +261,12 @@ def review_revision(db: Session, *, org_id: UUID, review_id: UUID,
                                          "lexical_rank": passage.fusion.lexical_rank})})
         db.execute(text("""
             UPDATE reviews SET state='processing', reviewed_against_corpus_version=:corpus_version,
-                evidence_as_of_date=:as_of, prompt_version=:prompt_version, model_id=:model_id,
+                evidence_as_of_date=:as_of, prompt_version=:prompt_version,
+                model_id=NULL, provider_id=NULL,
                 updated_at=now()
             WHERE org_id=:org_id AND id=:review_id AND state IN ('queued','processing')
         """), {"org_id": org_id, "review_id": review_id, "corpus_version": corpus_version,
-               "as_of": as_of, "prompt_version": PROMPT_VERSION, "model_id": chat.model})
+               "as_of": as_of, "prompt_version": PROMPT_VERSION})
         db.commit()  # Exact prompt evidence is durable before the external provider call.
     except ReviewFailure:
         db.rollback()
@@ -272,6 +275,8 @@ def review_revision(db: Session, *, org_id: UUID, review_id: UUID,
         db.rollback()
         raise ReviewFailure("review_snapshot_persistence_error", retryable=True) from exc
 
+    provider_id: str | None = None
+    model_id: str | None = None
     if not snapshot:
         validated = validate_review({"coverage": "insufficient",
                                      "coverage_reason": "No approved guidance was available for this review; a human must check the draft.",
@@ -293,10 +298,11 @@ def review_revision(db: Session, *, org_id: UUID, review_id: UUID,
             )
             validated = validate_review(candidate, revision_text=draft,
                                         supplied_passages={item.passage_id: item.text for item in snapshot})
+            provider_id, model_id = completed_provenance(chat)
         except Exception as exc:
             # Distinguish known provider errors only by safe class/code; no raw text is persisted.
             from app.integrations.sarvam import SarvamError
-            retryable = isinstance(exc, SarvamError)
+            retryable = isinstance(exc, (SarvamError, OpenAICompatibleError))
             raise ReviewFailure("review_provider_error" if retryable else "review_validation_error",
                                 retryable=retryable) from exc
 
@@ -305,11 +311,13 @@ def review_revision(db: Session, *, org_id: UUID, review_id: UUID,
                             coverage_reason="Only part of this long draft was included in retrieval queries; a human should check the remaining text.")
 
     _publish(db, org_id=org_id, review_id=review_id, revision_id=review["revision_id"],
-             draft=draft, snapshot=snapshot, validated=validated)
+             draft=draft, snapshot=snapshot, validated=validated,
+             provider_id=provider_id, model_id=model_id)
 
 
 def _publish(db: Session, *, org_id: UUID, review_id: UUID, revision_id: UUID,
-             draft: str, snapshot: list[EvidencePassage], validated: ValidatedReview) -> None:
+             draft: str, snapshot: list[EvidencePassage], validated: ValidatedReview,
+             provider_id: str | None, model_id: str | None) -> None:
     by_id = {item.passage_id: item for item in snapshot}
     try:
         current = db.execute(text("""
@@ -354,9 +362,11 @@ def _publish(db: Session, *, org_id: UUID, review_id: UUID, revision_id: UUID,
                        "effective_from": passage.effective_from, "sort_order": citation_order})
         db.execute(text("""
             UPDATE reviews SET state='ready_for_review',coverage=:coverage,coverage_reason=:coverage_reason,
+                provider_id=:provider_id,model_id=:model_id,
                 validator_outcome='passed_exact_quote_and_anchor_checks', completed_at=now(), updated_at=now()
             WHERE org_id=:org_id AND id=:review_id AND state='processing'
         """), {"org_id": org_id, "review_id": review_id,
+               "provider_id": provider_id, "model_id": model_id,
                "coverage": validated.coverage, "coverage_reason": validated.coverage_reason})
         db.execute(text("UPDATE drafts SET state='ready_for_review',updated_at=now() WHERE org_id=:org_id AND current_revision_id=:revision_id AND state='processing'"),
                    {"org_id": org_id, "revision_id": revision_id})
@@ -369,7 +379,7 @@ def _publish(db: Session, *, org_id: UUID, review_id: UUID, revision_id: UUID,
         raise ReviewFailure("review_result_persistence_error", retryable=True) from exc
 
 
-def build_review_dependencies() -> tuple[QueryEmbedder, SarvamChat]:
+def build_review_dependencies() -> tuple[QueryEmbedder, SarvamChat | SarvamFirstChat]:
     """Construct provider/model adapters lazily for the worker process."""
     from app.rag.embeddings import MODEL_NAME, get_embedder
     from app.core.config import get_settings
@@ -377,4 +387,4 @@ def build_review_dependencies() -> tuple[QueryEmbedder, SarvamChat]:
     settings = get_settings()
     if settings.EMBEDDING_MODEL != MODEL_NAME:
         raise RuntimeError("The configured embedding model does not match the pinned E5 adapter.")
-    return get_embedder(), SarvamChat(settings)
+    return get_embedder(), build_worker_chat(settings)

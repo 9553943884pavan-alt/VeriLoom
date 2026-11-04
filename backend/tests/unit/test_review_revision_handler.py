@@ -113,6 +113,8 @@ def test_review_snapshots_evidence_before_sarvam_and_persists_validated_citation
 
     db = FakeDB()
     chat = Chat(db)
+    chat.last_provider = "indierouter"
+    chat.last_model = "fallback-model"
     monkeypatch.setattr(handler, "retrieve_evidence", lambda *args, **kwargs: evidence())
     review_revision(db, org_id=ORG, review_id=REVIEW, embedder=Embedder(), chat=chat,
                     today=date(2026, 11, 4))
@@ -127,6 +129,8 @@ def test_review_snapshots_evidence_before_sarvam_and_persists_validated_citation
     citation = next(params for sql, params in db.calls if "INSERT INTO finding_citations" in sql)
     assert citation["excerpt"] == "Do not say best."
     assert citation["source_ref"] == "SRC#P1"
+    published = next(params for sql, params in db.calls if "coverage=:coverage" in sql)
+    assert (published["provider_id"], published["model_id"]) == ("indierouter", "fallback-model")
     assert any("state='ready_for_review'" in sql for sql, _ in db.calls)
     assert any("state='ready_for_review'" in sql and "UPDATE drafts" in sql for sql, _ in db.calls)
 
@@ -142,6 +146,7 @@ def test_no_evidence_finishes_as_insufficient_without_provider(monkeypatch):
     assert chat.calls == 0
     update = next(params for sql, params in db.calls if "coverage=:coverage" in sql)
     assert update["coverage"] == "insufficient"
+    assert (update["provider_id"], update["model_id"]) == (None, None)
     assert "human must check" in update["coverage_reason"]
 
 

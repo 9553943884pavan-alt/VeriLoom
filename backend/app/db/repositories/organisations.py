@@ -14,14 +14,14 @@ def active_role(db: Session, org_id: UUID, user_id: UUID) -> list[str] | None:
 
 
 def insert_organisation(db: Session, *, name: str, slug: str, time_zone: str, user_id: UUID) -> dict[str, Any]:
-    row = db.execute(text("INSERT INTO organisations (name, slug, time_zone) VALUES (:name, :slug, :time_zone) RETURNING id, name, time_zone"), {"name": name, "slug": slug, "time_zone": time_zone}).mappings().one()
+    row = db.execute(text("INSERT INTO organisations (name, slug, time_zone) VALUES (:name, :slug, :time_zone) RETURNING id, name, time_zone, corpus_version"), {"name": name, "slug": slug, "time_zone": time_zone}).mappings().one()
     db.execute(text("INSERT INTO memberships (org_id, user_id, roles, status) VALUES (:org_id, :user_id, ARRAY['admin']::text[], 'active')"), {"org_id": row["id"], "user_id": user_id})
-    return {"org_id": row["id"], "name": row["name"], "time_zone": row["time_zone"], "roles": ["admin"]}
+    return {"org_id": row["id"], "name": row["name"], "time_zone": row["time_zone"], "roles": ["admin"], "corpus_version": row["corpus_version"]}
 
 
 def list_user_organisations(db: Session, *, user_id: UUID, after: UUID | None, limit: int) -> list[dict[str, Any]]:
     rows = db.execute(text("""
-        SELECT o.id AS org_id, o.name, m.roles FROM memberships AS m
+        SELECT o.id AS org_id, o.name, m.roles, o.corpus_version FROM memberships AS m
         JOIN organisations AS o ON o.id = m.org_id
         WHERE m.user_id = :user_id AND m.status = 'active'
           AND (CAST(:after AS uuid) IS NULL OR o.id > CAST(:after AS uuid))

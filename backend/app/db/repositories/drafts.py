@@ -26,8 +26,8 @@ def list_drafts(db: Session, *, org_id: UUID, user_id: UUID, view: str, state: s
                d.updated_at, d.creator_user_id, r.reviewer_user_id AS assigned_reviewer_user_id,
                r.state AS review_state
         FROM drafts d LEFT JOIN reviews r ON r.org_id=d.org_id AND r.revision_id=d.current_revision_id
-        WHERE d.org_id=:org_id AND {where} AND (:state IS NULL OR d.state=:state)
-          AND (:after IS NULL OR d.id > :after)
+        WHERE d.org_id=:org_id AND {where} AND (CAST(:state AS text) IS NULL OR d.state=CAST(:state AS text))
+          AND (CAST(:after AS uuid) IS NULL OR d.id > CAST(:after AS uuid))
         ORDER BY d.id LIMIT :limit
     """), {"org_id": org_id, "user_id": user_id, "state": state, "after": after, "limit": limit}).mappings().all()
     return [dict(row) for row in rows]
@@ -92,7 +92,7 @@ def list_revisions(
         JOIN reviews r ON r.org_id = v.org_id AND r.revision_id = v.id
         LEFT JOIN decisions d ON d.org_id = r.org_id AND d.review_id = r.id
         WHERE v.org_id = :org_id AND v.draft_id = :draft_id
-          AND (:before IS NULL OR v.revision_number < :before)
+          AND (CAST(:before AS integer) IS NULL OR v.revision_number < CAST(:before AS integer))
         ORDER BY v.revision_number DESC
         LIMIT :limit
     """), {"org_id": org_id, "draft_id": draft_id, "before": before, "limit": limit}).mappings().all()

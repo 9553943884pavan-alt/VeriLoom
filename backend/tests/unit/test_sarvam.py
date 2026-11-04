@@ -68,6 +68,7 @@ class SarvamChatTests(unittest.TestCase):
 
     def test_sends_v2_strict_json_request_and_returns_decoded_object(self):
         self.assertEqual(self.complete(), {"answer": "ok"})
+        self.assertEqual((self.chat.last_provider, self.chat.last_model), ("sarvam", "test-model"))
         url, request = self.client.calls[0]
         self.assertEqual(url, CHAT_COMPLETIONS_URL)
         self.assertEqual(request["headers"]["api-subscription-key"], "test-secret")

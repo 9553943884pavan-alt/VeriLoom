@@ -36,13 +36,22 @@ def findings(db: Session, *, org_id: UUID, review_id: UUID) -> list[dict[str, An
     return [dict(row) for row in rows]
 
 
+def latest_decision(db: Session, *, org_id: UUID, review_id: UUID) -> dict[str, Any] | None:
+    row = db.execute(text("""SELECT id AS decision_id,action,comment,override_reason,
+        actor_user_id AS decided_by_user_id,created_at AS decided_at
+        FROM decisions WHERE org_id=:org_id AND review_id=:review_id
+        ORDER BY created_at DESC,id DESC LIMIT 1"""),
+        {"org_id": org_id, "review_id": review_id}).mappings().first()
+    return dict(row) if row is not None else None
+
+
 def insert_comment(db: Session, *, org_id: UUID, review_id: UUID, revision_id: UUID, actor_id: UUID, body: str) -> dict[str, Any]:
     row = db.execute(text("""INSERT INTO comments(org_id,review_id,revision_id,actor_user_id,body) VALUES (:org_id,:review_id,:revision_id,:actor_id,:body) RETURNING id AS comment_id,revision_id,body,actor_user_id,created_at"""), {"org_id":org_id,"review_id":review_id,"revision_id":revision_id,"actor_id":actor_id,"body":body}).mappings().one()
     return dict(row)
 
 
 def list_comments(db: Session, *, org_id: UUID, review_id: UUID, after: tuple[Any, UUID] | None, limit: int) -> list[dict[str, Any]]:
-    rows = db.execute(text("""SELECT id AS comment_id,revision_id,body,actor_user_id,created_at FROM comments WHERE org_id=:org_id AND review_id=:review_id AND (:after_at IS NULL OR (created_at,id)>(:after_at,:after_id)) ORDER BY created_at,id LIMIT :limit"""), {"org_id":org_id,"review_id":review_id,"after_at":after[0] if after else None,"after_id":after[1] if after else None,"limit":limit}).mappings().all()
+    rows = db.execute(text("""SELECT id AS comment_id,revision_id,body,actor_user_id,created_at FROM comments WHERE org_id=:org_id AND review_id=:review_id AND (CAST(:after_at AS timestamptz) IS NULL OR (created_at,id)>(CAST(:after_at AS timestamptz),CAST(:after_id AS uuid))) ORDER BY created_at,id LIMIT :limit"""), {"org_id":org_id,"review_id":review_id,"after_at":after[0] if after else None,"after_id":after[1] if after else None,"limit":limit}).mappings().all()
     return [dict(row) for row in rows]
 
 
@@ -58,7 +67,7 @@ def list_questions(db: Session, *, org_id: UUID, review_id: UUID, after: tuple[A
                    limit: int) -> list[dict[str, Any]]:
     rows = db.execute(text("""SELECT id AS turn_id,finding_id,question,rewritten_query,state,route,
         answer_status,answer,created_at,answered_at FROM chat_turns WHERE org_id=:org_id AND review_id=:review_id
-        AND (:after_at IS NULL OR (created_at,id)>(:after_at,:after_id))
+        AND (CAST(:after_at AS timestamptz) IS NULL OR (created_at,id)>(CAST(:after_at AS timestamptz),CAST(:after_id AS uuid)))
         ORDER BY created_at,id LIMIT :limit"""),
         {"org_id":org_id,"review_id":review_id,"after_at":after[0] if after else None,"after_id":after[1] if after else None,"limit":limit}).mappings().all()
     return [dict(row) for row in rows]

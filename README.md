@@ -40,15 +40,33 @@ Alembic migrations are under `backend/alembic/versions/`. Before applying them, 
 
 For local pytest runs where its cache plugin stalls on Windows, use `-p no:cacheprovider`. No production migration or deployment has been performed by these setup instructions.
 
+## Local frontend setup
+
+Use Node.js 20.19+ or a compatible current Node release. Keep the API and worker running against the same disposable migrated database. With the default `APP_ORIGIN=http://localhost:5173`, start the frontend in a third terminal:
+
+```powershell
+Set-Location frontend
+npm ci
+npm run dev -- --port 5173 --strictPort
+```
+
+Open `http://localhost:5173`. Browser requests use the Vite same-origin proxy to the API on port 8000; session cookies remain HttpOnly. If that API port is occupied, set the frontend terminal's server-only `VERILOOM_API_PROXY_TARGET` to your local API URL before starting Vite. If the frontend port changes, set backend `APP_ORIGIN` to the exact browser origin. Never put provider credentials in frontend variables.
+
+Run `npm run typecheck`, `npm run lint`, `npm test`, and `npm run build` from `frontend/`. Source uploads support `.txt`/`.md`; submitted drafts are text. Human reviewers make approval decisions. Retrieval and generated findings have observed quality limits in [the hybrid evaluation report](Docs/HYBRID_EVALUATION.md).
+
+## Synthetic evaluation
+
+From `backend/`, run `.\.venv\Scripts\python.exe scripts/evaluate_hybrid_mvp.py` with cached E5 weights for a provider-free retrieval evaluation. Add `--generate-smoke` only when you intend to send the two documented synthetic cases to configured providers. The script simulates the SQL cosine boundary and must not be presented as live pgvector benchmarking. The opt-in disposable SQL check is `.\.venv\Scripts\python.exe -m tests.integration.live_source_sql_smoke`; it creates and removes its own separate database using the configured server account's database-creation permission.
+
 ## Optional IndieRouter synthetic probe
 
-The worker currently sends review and follow-up requests to Sarvam. IndieRouter is a fallback candidate. Its adapter has offline tests, and a live synthetic probe passed the three product JSON schemas and local validators on 2026-11-05 with thinking disabled. Put `INDIEROUTER_API_KEY` in the ignored local `.env`, then run from `backend/`:
+The worker sends review and follow-up requests to Sarvam first. If Sarvam exhausts transient retries and `INDIEROUTER_API_KEY` is configured, IndieRouter receives the needed draft, approved evidence and bounded chat context. This private-data transfer was approved by the project owner. Migration 007 records the actual provider/model for reviews, answers and query rewrites; apply it to an approved test database before running the updated worker. A live synthetic probe passed the three product JSON schemas and local validators on 2026-11-05 with thinking disabled. To repeat it, run from `backend/`:
 
 ```powershell
 .\.venv\Scripts\python.exe -m scripts.smoke_indierouter --schemas
 ```
 
-This probe sends a canned greeting and invented draft/guidance text, forces a synthetic Sarvam transient failure, and checks the initial-review, follow-up rewrite, and grounded-answer outputs. It does not load organisation data. IndieRouter's [model notes](https://indierouter.ai/blog/deepseek-v4-1-flash-1017/) document the thinking control used by the probe. Automatic failover for private organisation content remains disabled until that transfer and persisted provider/model attribution are approved and verified.
+This probe sends a canned greeting and invented draft/guidance text, forces a synthetic Sarvam transient failure, and checks the initial-review, follow-up rewrite, and grounded-answer outputs. It does not load organisation data. IndieRouter's [model notes](https://indierouter.ai/blog/deepseek-v4-1-flash-1017/) document the thinking control used by the probe. Permanent Sarvam errors and malformed output do not trigger fallback. Provider/schema capability checks do not establish review quality.
 
 For an offline lexical retrieval baseline over the synthetic text fixtures, run `.\backend\.venv\Scripts\python.exe -m scripts.evaluate_text_mvp` from the repository root, or `.\.venv\Scripts\python.exe -m scripts.evaluate_text_mvp` from `backend/`. This measures BM25Plus whole-draft ranking only; it does not evaluate the live dense/hybrid retriever or generated findings.
 

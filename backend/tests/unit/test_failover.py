@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from app.integrations.failover import SyntheticFailoverChat
+from app.integrations.failover import SarvamFirstChat, SyntheticFailoverChat, completed_provenance
 from app.integrations.sarvam import SarvamError, SarvamTransientError
 
 
@@ -84,3 +84,38 @@ def test_both_providers_close() -> None:
     fallback = FakeChat("deepseek-v4.1-flash", {"answer": "fallback"})
     SyntheticFailoverChat(primary, fallback).close()
     assert primary.closed and fallback.closed
+
+
+def test_worker_fallback_accepts_approved_material_and_clears_stale_provenance() -> None:
+    primary = FakeChat("primary-model", SarvamTransientError("unavailable"))
+    fallback = FakeChat("fallback-model", {"answer": "fallback"})
+    chat = SarvamFirstChat(primary, fallback)
+    assert chat.complete_json(MESSAGES, schema_name="s", schema=SCHEMA) == {"answer": "fallback"}
+    assert completed_provenance(chat) == ("indierouter", "fallback-model")
+    fallback.result = SarvamError("failed")
+    with pytest.raises(SarvamError):
+        chat.complete_json(MESSAGES, schema_name="s", schema=SCHEMA)
+    assert (chat.last_provider, chat.last_model) == (None, None)
+
+
+def test_worker_builder_uses_optional_configured_fallback(monkeypatch) -> None:
+    from types import SimpleNamespace
+    from pydantic import SecretStr
+    import app.integrations.failover as module
+
+    primary = FakeChat("primary-model", {"answer": "primary"})
+    monkeypatch.setattr(module, "SarvamChat", lambda _settings: primary)
+    settings = SimpleNamespace(INDIEROUTER_API_KEY=SecretStr(""),
+                               INDIEROUTER_MODEL="fallback-model",
+                               INDIEROUTER_CHAT_URL="https://example.com/v1/chat/completions")
+    assert module.build_worker_chat(settings) is primary
+    captured = {}
+    fallback = FakeChat("fallback-model", {"answer": "fallback"})
+    monkeypatch.setattr(module, "OpenAICompatibleChat", lambda **kwargs:
+                        captured.update(kwargs) or fallback)
+    settings.INDIEROUTER_API_KEY = SecretStr("test-only")
+    chat = module.build_worker_chat(settings)
+    assert isinstance(chat, SarvamFirstChat)
+    assert captured == {"endpoint_url": settings.INDIEROUTER_CHAT_URL,
+                        "model_id": "fallback-model", "api_key": "test-only",
+                        "disable_thinking": True}

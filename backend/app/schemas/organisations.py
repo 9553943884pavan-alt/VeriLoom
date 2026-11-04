@@ -41,12 +41,14 @@ class OrganisationCreated(StrictModel):
     name: str
     time_zone: str
     roles: list[Role]
+    corpus_version: int = Field(ge=0)
 
 
 class OrganisationSummary(StrictModel):
     org_id: UUID
     name: str
     roles: list[Role]
+    corpus_version: int = Field(ge=0)
 
 
 class OrganisationList(StrictModel):

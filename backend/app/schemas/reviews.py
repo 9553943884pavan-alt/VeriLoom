@@ -5,7 +5,16 @@ from uuid import UUID
 
 from pydantic import BaseModel
 from pydantic import StringConstraints
-from typing import Annotated
+from typing import Annotated, Literal
+
+
+class ReviewDecisionSummary(BaseModel):
+    decision_id: UUID
+    action: Literal["request_changes", "approve"]
+    comment: str | None
+    override_reason: str | None
+    decided_by_user_id: UUID
+    decided_at: datetime
 
 
 class ReviewOut(BaseModel):
@@ -23,6 +32,7 @@ class ReviewOut(BaseModel):
     failure: dict | None
     created_at: datetime
     completed_at: datetime | None
+    decision: ReviewDecisionSummary | None = None
 
 
 class DecisionOut(BaseModel):

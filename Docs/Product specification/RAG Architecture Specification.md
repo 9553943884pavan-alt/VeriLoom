@@ -136,6 +136,12 @@ Use [data/evaluation/drafts.jsonl](../../data/evaluation/drafts.jsonl), [followu
 
 The thresholds for model quality and acceptable latency must be set after a local baseline; do not claim measured accuracy before running it. The release gate is a live **three-role** path, with distinct Creator and Reviewer accounts: Admin approves guidance; Creator submits a text revision; Reviewer sees cited findings or a visible insufficiency warning; Reviewer asks a direct and a new-topic question; Reviewer requests a change; Creator resubmits; Reviewer approves; old citations and revision history remain inspectable. Include one demonstrated abstention and one source-isolation test.
 
+### Approved provider fallback
+
+The worker uses Sarvam first. After its bounded transient retries are exhausted, a configured IndieRouter adapter may receive the required private draft, approved passages and bounded recent context; the project owner explicitly approved that transfer. Permanent Sarvam errors and malformed output do not trigger fallback. Both providers use the same prompt versions and server validators. Persist actual provider/model attribution independently for the review, rewrite and grounded answer using migration 007; clarification/abstention without generation has no answer provider. No fallback completion bypasses citation or anchor checks.
+
+Provider retries can exceed one queue lease. The worker renews its lease on a separate database session every third of the lease duration while a handler runs. Before handler commits, it verifies and locks the running job's organisation, worker ownership and unexpired wall-clock lease in that same transaction. Known or uncertain loss rolls back publication and abandons the stale attempt. Stop the renewal thread before terminal queue writes; their own ownership checks still apply.
+
 ## Reference boundaries
 
 - **Public API, roles, state transitions, evidence JSON, and internal function signatures:** [API Contracts](API%20Contracts.md). This document implements retrieval behind those shapes and does not redefine them.
