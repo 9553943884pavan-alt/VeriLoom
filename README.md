@@ -1,6 +1,6 @@
 # VeriLoom
 
-VeriLoom is a text-first brand review platform being built for the hackathon. The product workflow and interfaces are specified in [Docs/PRESENTATION.md](Docs/PRESENTATION.md) and [Docs/Product specification/README.md](Docs/Product%20specification/README.md). The backend code includes authentication, organisations, Admin guidance upload and approval, private R2 storage, draft submission, human review decisions, and a durable worker for ingestion, initial review, and follow-up answers. These flows have offline tests; a disposable migrated PostgreSQL integration run and a Sarvam structured-output smoke test are still required before claiming end-to-end operation.
+VeriLoom is a text-first brand review platform being built for the hackathon. The product workflow and interfaces are specified in [Docs/PRESENTATION.md](Docs/PRESENTATION.md) and [Docs/Product specification/README.md](Docs/Product%20specification/README.md). The backend code includes authentication, organisations, Admin guidance upload and approval, private R2 storage, draft submission, human review decisions, and a durable worker for ingestion, initial review, and follow-up answers. A synthetic end-to-end backend run against a disposable migrated PostgreSQL database, R2, local E5 embeddings, and Sarvam passed on 2026-11-04; see [Docs/IMPLEMENTATION_LOG.md](Docs/IMPLEMENTATION_LOG.md) for the exact scope and limits.
 
 ## Local backend setup
 
@@ -39,5 +39,17 @@ Alembic migrations are under `backend/alembic/versions/`. Before applying them, 
 ```
 
 For local pytest runs where its cache plugin stalls on Windows, use `-p no:cacheprovider`. No production migration or deployment has been performed by these setup instructions.
+
+## Optional IndieRouter synthetic probe
+
+The worker currently sends review and follow-up requests to Sarvam. IndieRouter is a fallback candidate. Its adapter has offline tests, and a live synthetic probe passed the three product JSON schemas and local validators on 2026-11-05 with thinking disabled. Put `INDIEROUTER_API_KEY` in the ignored local `.env`, then run from `backend/`:
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.smoke_indierouter --schemas
+```
+
+This probe sends a canned greeting and invented draft/guidance text, forces a synthetic Sarvam transient failure, and checks the initial-review, follow-up rewrite, and grounded-answer outputs. It does not load organisation data. IndieRouter's [model notes](https://indierouter.ai/blog/deepseek-v4-1-flash-1017/) document the thinking control used by the probe. Automatic failover for private organisation content remains disabled until that transfer and persisted provider/model attribution are approved and verified.
+
+For an offline lexical retrieval baseline over the synthetic text fixtures, run `.\backend\.venv\Scripts\python.exe -m scripts.evaluate_text_mvp` from the repository root, or `.\.venv\Scripts\python.exe -m scripts.evaluate_text_mvp` from `backend/`. This measures BM25Plus whole-draft ranking only; it does not evaluate the live dense/hybrid retriever or generated findings.
 
 The migration command above changes the database configured by `DATABASE_URL`. Only use it for a disposable local database unless the live Render migration has been separately reviewed and approved. The initial migration has no destructive rollback.

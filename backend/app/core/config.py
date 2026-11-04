@@ -31,6 +31,9 @@ class Settings(BaseSettings):
 
     SARVAM_API_KEY: SecretStr = SecretStr("")
     SARVAM_MODEL: str = "sarvam-105b"
+    INDIEROUTER_API_KEY: SecretStr = SecretStr("")
+    INDIEROUTER_MODEL: str = "deepseek-v4.1-flash"
+    INDIEROUTER_CHAT_URL: str = "https://api.indierouter.ai/v1/chat/completions"
     EMBEDDING_MODEL: str = "intfloat/multilingual-e5-small"
     RERANKER_ENABLED: bool = False
     RERANKER_MODEL: str = "BAAI/bge-reranker-v2-m3"

@@ -26,6 +26,10 @@ class SarvamError(RuntimeError):
     """A safe-to-report provider failure."""
 
 
+class SarvamTransientError(SarvamError):
+    """A transport, rate-limit, or server failure eligible for failover."""
+
+
 class SarvamResponseError(SarvamError):
     """The provider returned a response that cannot be safely consumed."""
 
@@ -139,19 +143,19 @@ class SarvamChat:
                 )
             except httpx.TransportError:
                 if attempt == self._max_attempts:
-                    raise SarvamError("Sarvam is temporarily unavailable.") from None
+                    raise SarvamTransientError("Sarvam is temporarily unavailable.") from None
                 self._sleeper(0.2 * (2 ** (attempt - 1)))
                 continue
 
             if response.status_code in _RETRYABLE_STATUS_CODES:
                 if attempt == self._max_attempts:
-                    raise SarvamError("Sarvam is temporarily unavailable.")
+                    raise SarvamTransientError("Sarvam is temporarily unavailable.")
                 self._sleeper(0.2 * (2 ** (attempt - 1)))
                 continue
             if response.status_code < 200 or response.status_code >= 300:
                 raise SarvamError("Sarvam could not complete the request.")
             return response
-        raise SarvamError("Sarvam is temporarily unavailable.")
+        raise SarvamTransientError("Sarvam is temporarily unavailable.")
 
     def close(self) -> None:
         """Close the internally created HTTP client, if there is one."""

@@ -13,6 +13,7 @@ from app.integrations.sarvam import (
     SarvamConfigurationError,
     SarvamError,
     SarvamResponseError,
+    SarvamTransientError,
 )
 
 
@@ -112,6 +113,7 @@ class SarvamChatTests(unittest.TestCase):
         with self.assertRaises(SarvamError) as caught:
             chat.complete_json(self.messages, schema_name="s", schema=self.schema)
         self.assertEqual(str(caught.exception), "Sarvam is temporarily unavailable.")
+        self.assertIsInstance(caught.exception, SarvamTransientError)
         self.assertNotIn("secret", str(caught.exception))
         self.assertEqual(len(client.calls), MAX_ATTEMPTS)
         self.assertEqual(self.delays, [0.2, 0.4])
@@ -119,8 +121,9 @@ class SarvamChatTests(unittest.TestCase):
     def test_nonretryable_http_error_is_sanitized_without_retry(self):
         client = FakeClient([FakeResponse(401)])
         chat = SarvamChat(configured_settings(), client=client, sleeper=self.delays.append)
-        with self.assertRaisesRegex(SarvamError, "could not complete"):
+        with self.assertRaisesRegex(SarvamError, "could not complete") as caught:
             chat.complete_json(self.messages, schema_name="s", schema=self.schema)
+        self.assertNotIsInstance(caught.exception, SarvamTransientError)
         self.assertEqual(len(client.calls), 1)
         self.assertEqual(self.delays, [])
 

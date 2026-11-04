@@ -85,7 +85,8 @@ VeriLoom/
 │   │       ├── 003_knowledge.py
 │   │       ├── 004_review.py
 │   │       ├── 005_jobs.py
-│   │       └── 006_vector_index_optional.py      add only after measurement
+│   │       ├── 006_source_version_metadata.py     snapshot replacement metadata per version
+│   │       └── 007_vector_index_optional.py      add only after measurement
 │   ├── app/
 │   │   ├── __init__.py
 │   │   ├── main.py                                FastAPI creation and router mounting
@@ -110,6 +111,7 @@ VeriLoom/
 │   │   │   ├── auth.py
 │   │   │   ├── organisations.py
 │   │   │   ├── sources.py
+│   │   │   ├── evidence.py                   authorised passage detail types
 │   │   │   ├── drafts.py
 │   │   │   └── reviews.py
 │   │   ├── db/
@@ -122,6 +124,7 @@ VeriLoom/
 │   │   │   └── repositories/
 │   │   │       ├── identity.py
 │   │   │       ├── sources.py
+│   │   │       ├── evidence.py                scoped passage and citation reads
 │   │   │       ├── drafts.py
 │   │   │       ├── reviews.py
 │   │   │       └── jobs.py
@@ -129,6 +132,7 @@ VeriLoom/
 │   │   │   ├── authentication.py
 │   │   │   ├── organisations.py
 │   │   │   ├── sources.py
+│   │   │   ├── evidence.py                    authorised historical evidence
 │   │   │   ├── drafts.py
 │   │   │   ├── reviews.py
 │   │   │   └── questions.py
@@ -154,7 +158,9 @@ VeriLoom/
 │   │   │       └── grounded_answer.txt
 │   │   ├── integrations/
 │   │   │   ├── r2.py                             private object storage adapter
-│   │   │   └── sarvam.py                         server-side V2 chat adapter
+│   │   │   ├── sarvam.py                         server-side V2 chat adapter
+│   │   │   ├── openai_compatible.py              configurable verified fallback adapter
+│   │   │   └── failover.py                       synthetic-only provider failover chain
 │   │   └── jobs/
 │   │       ├── queue.py                          PostgreSQL job claiming and retries
 │   │       ├── worker.py                         separate Render worker entry point
@@ -164,6 +170,7 @@ VeriLoom/
 │   │           └── answer_question.py
 │   ├── scripts/
 │   │   ├── seed_demo.py                          idempotent approved demo data seed
+│   │   ├── smoke_indierouter.py                 opt-in synthetic-only provider probe
 │   │   └── evaluate_text_mvp.py                  offline text-only evaluation
 │   └── tests/
 │       ├── conftest.py                           isolated test DB and test clients
@@ -171,6 +178,10 @@ VeriLoom/
 │       │   ├── test_chunking.py
 │       │   ├── test_fusion.py                    bounded reciprocal-rank fusion
 │       │   ├── test_r2.py                        private object adapter contract
+│       │   ├── test_openai_compatible.py         synthetic IndieRouter wire tests
+│       │   ├── test_failover.py                  synthetic-only provider failover
+│       │   ├── test_evidence.py                  scoped historical passage detail
+│       │   ├── test_evaluate_text_mvp.py         offline text evaluation metrics
 │       │   ├── test_ingestion.py                 text upload and normalization rules
 │       │   ├── test_job_queue.py                 durable job claim and retry rules
 │       │   ├── test_retrieval_scoping.py
