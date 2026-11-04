@@ -2,6 +2,8 @@
 
 VeriLoom is a text-first brand review platform being built for the hackathon. The product workflow and interfaces are specified in [Docs/PRESENTATION.md](Docs/PRESENTATION.md) and [Docs/Product specification/README.md](Docs/Product%20specification/README.md). The backend code includes authentication, organisations, Admin guidance upload and approval, private R2 storage, draft submission, human review decisions, and a durable worker for ingestion, initial review, and follow-up answers. A synthetic end-to-end backend run against a disposable migrated PostgreSQL database, R2, local E5 embeddings, and Sarvam passed on 2026-11-04; see [Docs/IMPLEMENTATION_LOG.md](Docs/IMPLEMENTATION_LOG.md) for the exact scope and limits.
 
+The React MVP is in `frontend/`. Its local browser check completed the Admin → Creator → Reviewer → Creator → Reviewer workflow with real PostgreSQL, R2, E5 and Sarvam, including revision history and human decision reasons. The measured retrieval and model-output limits are documented in [Docs/HYBRID_EVALUATION.md](Docs/HYBRID_EVALUATION.md); workflow completion does not establish review accuracy.
+
 ## Local backend setup
 
 Use Python 3.12. If the Windows `py` launcher says no Python is installed, locate the installed `python.exe` and use its full path for the first command.

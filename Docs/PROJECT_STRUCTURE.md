@@ -19,6 +19,7 @@ Small related screens are deliberately grouped within feature modules, following
 | `frontend/src/features/reviews/Reviews.tsx` | Findings, citations, questions, comments, human decisions. |
 | `frontend/src/components/ui.tsx` | Shared forms, error/status rendering, cursor pagination and polling. |
 | `frontend/src/lib/api/client.ts`, `lib/types.ts`, `lib/anchors.ts` | Same-origin HTTP/CSRF, contract types and code-point suggestion guards; adjacent `*.test.ts` files. |
+| `frontend/src/lib/polling.ts` | Bounded pending polling, terminal/auth stops and server Retry-After handling; adjacent tests. |
 | `frontend/src/style.css` | Tailwind import and responsive visual styles. |
 | `frontend/{package.json,package-lock.json,tsconfig.json,vite.config.ts,eslint.config.js,index.html}` | Pinned frontend toolchain and Vite API proxy. |
 | `backend/scripts/evaluate_hybrid_mvp.py`, `Docs/HYBRID_EVALUATION.md` | Reproducible E5 hybrid evaluation with explicit SQL simulation and optional bounded synthetic generation. |

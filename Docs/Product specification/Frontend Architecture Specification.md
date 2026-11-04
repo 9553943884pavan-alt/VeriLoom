@@ -1,6 +1,6 @@
 # VeriLoom Frontend Architecture Specification
 
-**Status:** proposed Round 2 implementation specification; no screen or package here is claimed to exist yet.  
+**Status:** core Round 2 React MVP implemented and verified locally on 2026-11-05. The sections below retain the destination architecture; current implementation limits are stated here.
 **Audience:** the solo builder implementing the React interface.  
 **Scope:** one organisation at a time, text guidance and text drafts, grounded review, reviewer follow-up, revision request, resubmission, and human approval. The API contract defines the server behavior; this file defines how the browser uses it.
 
@@ -20,6 +20,8 @@ The frontend has three jobs: let the right person perform an action, show the cu
 These are implementation choices, not additions to the [technology commitments in PRESENTATION.md](../PRESENTATION.md). Keep versions pinned in the eventual package lockfile and verify current setup instructions when the app is initialized. [React Router routing](https://reactrouter.com/start/declarative/routing), [TanStack Query polling](https://tanstack.com/query/latest/docs/framework/react/guides/polling), [Vite development proxy](https://vite.dev/config/server-options).
 
 ## 2. Route map and permission gates
+
+The current MVP opens source-version detail inline within `/admin/sources`; the dedicated version-detail URL in the destination map remains planned. Member-role and source-replacement controls are implemented and pass static/build checks, but were not exercised during the recorded live browser journey. Deployed Vercel rewrites and production HTTPS cookies remain deployment verification work.
 
 Use `orgId` from the URL, but confirm the signed-in user's membership from `GET /auth/me` before rendering an organisation route. On a cold load, show a neutral loading screen until that request resolves. An unauthenticated user goes to `/login`; a signed-in user without access sees an access-denied page. Backend `403` or cross-organisation `404` still governs every request.
 
