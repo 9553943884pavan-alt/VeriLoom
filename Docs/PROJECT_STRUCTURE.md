@@ -170,6 +170,9 @@ VeriLoom/
 │       ├── unit/
 │       │   ├── test_chunking.py
 │       │   ├── test_fusion.py                    bounded reciprocal-rank fusion
+│       │   ├── test_r2.py                        private object adapter contract
+│       │   ├── test_ingestion.py                 text upload and normalization rules
+│       │   ├── test_job_queue.py                 durable job claim and retry rules
 │       │   ├── test_retrieval_scoping.py
 │       │   ├── test_finding_anchors.py
 │       │   └── test_prompt_validation.py
