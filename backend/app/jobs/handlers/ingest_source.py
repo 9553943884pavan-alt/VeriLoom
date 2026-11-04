@@ -52,7 +52,7 @@ def ingest_source(
     """Extract, chunk, embed, and atomically publish one source version."""
     row = db.execute(text("""
         SELECT v.id, v.source_id, v.r2_object_key, v.sha256, v.byte_size, v.mime_type,
-               v.ingestion_status, s.title, s.category
+               v.ingestion_status, v.title, v.category
         FROM source_versions v JOIN sources s
           ON s.org_id = v.org_id AND s.id = v.source_id
         WHERE v.org_id = :org_id AND v.id = :version_id

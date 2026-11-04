@@ -26,6 +26,7 @@ from app.schemas.sources import SourceApprovalRequest, SourceUploadAccepted, Sou
 from app.services.organisations import _require_role
 
 IDEMPOTENCY_ENDPOINT = "/organisations/{org_id}/sources"
+REPLACEMENT_IDEMPOTENCY_ENDPOINT = "/organisations/{org_id}/sources/{source_id}/versions"
 SOURCE_STATUSES = {"active", "archived", "expired", "pending", "queued", "processing", "ready", "failed"}
 
 
@@ -137,6 +138,103 @@ def approve_source_version(
     )
     db.commit()
     return {"source_id": source_id, "approved_version_id": version_id, "corpus_version": corpus_version}
+
+
+def replace_source_version(
+    db: Session, storage: R2Storage | Callable[[], R2Storage], *, org_id: UUID,
+    source_id: UUID, actor_id: UUID, metadata: SourceUploadMetadata, filename: str,
+    content: bytes, idempotency_key: UUID | None = None,
+) -> dict:
+    _require_role(db, org_id, actor_id, {"admin"})
+    try:
+        extracted = extract_guidance(filename, content)
+    except GuidanceTooLarge as exc:
+        raise ApiError(413, "file_too_large", "The file exceeds the 2 MiB limit.") from exc
+    except UnsupportedGuidanceFormat as exc:
+        raise ApiError(415, "unsupported_file", "Upload a valid UTF-8 .txt or .md file.") from exc
+    except InvalidGuidanceText as exc:
+        raise ApiError(422, "empty_file", "The file must contain text.") from exc
+    digest = _request_digest(content, metadata, extracted.mime_type) if idempotency_key is not None else None
+    if digest is not None:
+        digest = hashlib.sha256(str(org_id).encode("ascii") + b"\0" + str(source_id).encode("ascii")
+                                + b"\0" + digest.encode("ascii")).hexdigest()
+        existing = repo.get_idempotency_record(
+            db, user_id=actor_id, endpoint=REPLACEMENT_IDEMPOTENCY_ENDPOINT, key=idempotency_key,
+        )
+        if existing is not None:
+            if existing.get("expired", False):
+                raise ApiError(409, "idempotency_key_expired", "This key has expired and cannot be reused.")
+            if existing["org_id"] != org_id or existing["request_sha256"] != digest:
+                raise ApiError(409, "idempotency_key_reused", "This key was used for a different request.")
+            if existing["state"] == "complete":
+                return SourceUploadAccepted.model_validate(existing["response_json"]).model_dump()
+            raise ApiError(409, "request_in_progress", "This upload is already being processed.")
+    source = repo.lock_source_for_replacement(db, org_id=org_id, source_id=source_id)
+    if source is None:
+        db.rollback()
+        raise ApiError(404, "not_found", "The requested resource was not found.")
+    if callable(storage):
+        try:
+            storage = storage()
+        except R2ConfigurationError as exc:
+            db.rollback()
+            raise ApiError(503, "storage_unavailable", "Original file storage is not configured.") from exc
+    version_id = uuid4()
+    label = f"{source['major'] + 1}.0"
+    object_key = f"org/{org_id}/sources/{source_id}/versions/{version_id}/original"
+    try:
+        storage.put_bytes(object_key, content, extracted.mime_type)
+    except R2StorageError as exc:
+        db.rollback()
+        raise ApiError(503, "storage_unavailable", "The original file could not be stored.") from exc
+    try:
+        repo.insert_replacement_version(
+            db, org_id=org_id, source_id=source_id, version_id=version_id,
+            actor_id=actor_id, version_label=label, title=metadata.title,
+            category=metadata.category, object_key=object_key,
+            sha256=extracted.sha256, mime_type=extracted.mime_type,
+            byte_size=extracted.byte_size, effective_from=metadata.effective_from,
+            effective_to=metadata.effective_to,
+        )
+        enqueue_job(db, org_id=org_id, kind="ingest_source", resource_id=version_id)
+        if idempotency_key is not None:
+            response = {"source_id": source_id, "version_id": version_id, "ingestion_status": "queued"}
+            repo.insert_idempotency_record(
+                db, user_id=actor_id, org_id=org_id, key=idempotency_key,
+                request_sha256=digest, source_id=source_id,
+                response_json={k: str(v) if isinstance(v, UUID) else v for k, v in response.items()},
+                endpoint=REPLACEMENT_IDEMPOTENCY_ENDPOINT,
+            )
+        db.commit()
+    except Exception:
+        db.rollback()
+        try:
+            storage.delete(object_key)
+        except R2StorageError:
+            pass
+        raise
+    return {"source_id": source_id, "version_id": version_id, "ingestion_status": "queued"}
+
+
+def archive_source(
+    db: Session, *, org_id: UUID, source_id: UUID, actor_id: UUID,
+    request: SourceApprovalRequest,
+) -> dict:
+    org = repo.lock_org_for_approval(db, org_id=org_id)
+    if org is None:
+        raise ApiError(404, "not_found", "The requested resource was not found.")
+    _require_role(db, org_id, actor_id, {"admin"})
+    if org["corpus_version"] != request.expected_corpus_version:
+        raise ApiError(409, "stale_version", "The guidance corpus changed. Refresh before archiving.",
+                       {"current_corpus_version": org["corpus_version"]})
+    if not repo.lock_source_for_approval(db, org_id=org_id, source_id=source_id):
+        raise ApiError(404, "not_found", "The requested resource was not found.")
+    if not repo.has_approved_version(db, org_id=org_id, source_id=source_id):
+        raise ApiError(409, "source_not_active", "Only a source with an approved version can be archived.")
+    corpus_version = org["corpus_version"] + 1
+    repo.archive_source(db, org_id=org_id, source_id=source_id, corpus_version=corpus_version)
+    db.commit()
+    return {"source_id": source_id, "corpus_version": corpus_version}
 
 
 def _request_digest(content: bytes, metadata: SourceUploadMetadata, mime_type: str) -> str:

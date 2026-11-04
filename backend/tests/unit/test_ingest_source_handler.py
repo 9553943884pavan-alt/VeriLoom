@@ -74,6 +74,9 @@ def test_handler_persists_exact_passage_and_readiness_atomically():
     db, embedder = make_db(), Embedder()
     ingest_source(db, org_id=ORG, version_id=VERSION, storage=Storage(), embedder=embedder)
     inserts = [(sql, params) for sql, params in db.calls if "INSERT INTO source_passages" in sql]
+    select_sql = db.calls[0][0]
+    assert "v.title, v.category" in select_sql
+    assert "s.title" not in select_sql and "s.category" not in select_sql
     assert len(inserts) == 1
     sql, params = inserts[0]
     assert "CAST(:embedding AS vector)" in sql

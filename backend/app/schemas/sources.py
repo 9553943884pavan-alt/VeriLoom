@@ -49,6 +49,11 @@ class SourceApprovalResponse(StrictModel):
     corpus_version: int = Field(ge=1)
 
 
+class SourceArchiveResponse(StrictModel):
+    source_id: UUID
+    corpus_version: int = Field(ge=1)
+
+
 class SourceSummary(StrictModel):
     source_id: UUID
     title: str

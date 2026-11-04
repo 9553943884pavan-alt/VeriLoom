@@ -450,3 +450,65 @@ def test_source_status_endpoints_and_openapi_contract(monkeypatch: pytest.Monkey
     assert "/api/v1/organisations/{org_id}/sources" in spec
     assert "/api/v1/organisations/{org_id}/sources/{source_id}/versions/{version_id}" in spec
     assert "/api/v1/organisations/{org_id}/sources/{source_id}/versions/{version_id}/original" in spec
+
+
+def test_replacement_upload_creates_queued_immutable_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    db, storage = FakeDb(), FakeStorage()
+    jobs: list[dict] = []
+    inserted: dict = {}
+    allow_admin(monkeypatch, ["admin"])
+    monkeypatch.setattr(sources.repo, "lock_source_for_replacement", lambda *_a, **_k: {"major": 1})
+    monkeypatch.setattr(sources.repo, "insert_replacement_version", lambda _db, **kw: inserted.update(kw))
+    monkeypatch.setattr(sources, "enqueue_job", lambda _db, **kw: jobs.append(kw))
+    source_id = UUID("33333333-3333-4333-8333-333333333333")
+    result = sources.replace_source_version(
+        db, storage, org_id=ORG_ID, source_id=source_id, actor_id=ADMIN_ID,
+        metadata=metadata(), filename="guide.md", content=b"Updated guidance",
+    )
+    assert result["source_id"] == source_id and result["ingestion_status"] == "queued"
+    assert inserted["version_label"] == "2.0"
+    assert inserted["version_id"] == result["version_id"]
+    assert inserted["title"] == "Brand guidance"
+    assert inserted["category"] == "guidelines"
+    assert jobs == [{"org_id": ORG_ID, "kind": "ingest_source", "resource_id": result["version_id"]}]
+    assert db.commits == 1
+
+
+def test_archive_requires_active_source_and_increments_corpus(monkeypatch: pytest.MonkeyPatch) -> None:
+    db = FakeDb()
+    calls: list[dict] = []
+    allow_admin(monkeypatch, ["admin"])
+    monkeypatch.setattr(sources.repo, "lock_org_for_approval", lambda *_a, **_k: {
+        "corpus_version": 3, "time_zone": "Asia/Kolkata",
+    })
+    monkeypatch.setattr(sources.repo, "lock_source_for_approval", lambda *_a, **_k: True)
+    monkeypatch.setattr(sources.repo, "has_approved_version", lambda *_a, **_k: True)
+    monkeypatch.setattr(sources.repo, "archive_source", lambda _db, **kw: calls.append(kw))
+    result = sources.archive_source(
+        db, org_id=ORG_ID, source_id=ADMIN_ID, actor_id=ADMIN_ID,
+        request=SourceApprovalRequest(expected_corpus_version=3),
+    )
+    assert result == {"source_id": ADMIN_ID, "corpus_version": 4}
+    assert calls == [{"org_id": ORG_ID, "source_id": ADMIN_ID, "corpus_version": 4}]
+    assert db.commits == 1
+
+
+def test_archive_rejects_stale_and_non_active_sources(monkeypatch: pytest.MonkeyPatch) -> None:
+    allow_admin(monkeypatch, ["admin"])
+    monkeypatch.setattr(sources.repo, "lock_org_for_approval", lambda *_a, **_k: {
+        "corpus_version": 5, "time_zone": "Asia/Kolkata",
+    })
+    with pytest.raises(ApiError) as stale:
+        sources.archive_source(
+            FakeDb(), org_id=ORG_ID, source_id=ADMIN_ID, actor_id=ADMIN_ID,
+            request=SourceApprovalRequest(expected_corpus_version=4),
+        )
+    assert stale.value.code == "stale_version"
+    monkeypatch.setattr(sources.repo, "lock_source_for_approval", lambda *_a, **_k: True)
+    monkeypatch.setattr(sources.repo, "has_approved_version", lambda *_a, **_k: False)
+    with pytest.raises(ApiError) as inactive:
+        sources.archive_source(
+            FakeDb(), org_id=ORG_ID, source_id=ADMIN_ID, actor_id=ADMIN_ID,
+            request=SourceApprovalRequest(expected_corpus_version=5),
+        )
+    assert inactive.value.code == "source_not_active"

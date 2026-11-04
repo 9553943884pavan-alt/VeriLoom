@@ -17,6 +17,7 @@ from app.integrations.r2 import R2Storage
 from app.schemas.sources import (
     SourceApprovalRequest,
     SourceApprovalResponse,
+    SourceArchiveResponse,
     SourceList,
     SourceUploadAccepted,
     SourceUploadMetadata,
@@ -127,6 +128,63 @@ def upload_source(
     return sources.upload_source(
         db, storage_factory, org_id=org_id, actor_id=user["id"], metadata=metadata,
         filename=file.filename or "", content=content, idempotency_key=key,
+    )
+
+
+@router.post(
+    "/{org_id}/sources/{source_id}/versions",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=SourceUploadAccepted,
+)
+def replace_source_version(
+    org_id: UUID,
+    source_id: UUID,
+    file: Annotated[UploadFile, File()],
+    title: Annotated[str, Form()],
+    category: Annotated[str, Form()],
+    effective_from: Annotated[str, Form()],
+    effective_to: Annotated[str | None, Form()] = None,
+    idempotency_header: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    user: dict = Depends(signed_in_user),
+    db: Session = Depends(get_session),
+    storage_factory: Callable[[], R2Storage] = Depends(get_r2_storage_factory),
+) -> dict:
+    try:
+        metadata = SourceUploadMetadata(title=title, category=category,
+                                        effective_from=effective_from, effective_to=effective_to)
+    except ValidationError as exc:
+        fields = [{"field": ".".join(map(str, item["loc"])), "type": item["type"]} for item in exc.errors()]
+        raise ApiError(422, "validation_error", "The request is invalid.", {"fields": fields}) from exc
+    _require_role(db, org_id, user["id"], {"admin"})
+    key: UUID | None = None
+    if idempotency_header is not None:
+        try:
+            key = UUID(idempotency_header)
+        except ValueError as exc:
+            raise ApiError(422, "invalid_idempotency_key", "Idempotency-Key must be a UUID.") from exc
+    content = file.file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise ApiError(413, "file_too_large", "The file exceeds the 2 MiB limit.")
+    return sources.replace_source_version(
+        db, storage_factory, org_id=org_id, source_id=source_id,
+        actor_id=user["id"], metadata=metadata, filename=file.filename or "", content=content,
+        idempotency_key=key,
+    )
+
+
+@router.post(
+    "/{org_id}/sources/{source_id}/archive",
+    response_model=SourceArchiveResponse,
+)
+def archive_source(
+    org_id: UUID,
+    source_id: UUID,
+    payload: SourceApprovalRequest,
+    user: dict = Depends(signed_in_user),
+    db: Session = Depends(get_session),
+) -> dict:
+    return sources.archive_source(
+        db, org_id=org_id, source_id=source_id, actor_id=user["id"], request=payload,
     )
 
 
