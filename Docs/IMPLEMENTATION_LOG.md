@@ -25,12 +25,13 @@ The database and provider credentials in the ignored `.env` have not been printe
 - Added a private Cloudflare R2 adapter with bounded 2 MiB reads/writes, explicit timeouts and retries, injectable test client, and safe storage errors.
 - Added PostgreSQL job queue operations for enqueue, `SKIP LOCKED` claim, lease renewal, completion, failure, and bounded retry scheduling. These operations use caller-owned transactions and have not yet been exercised against a migrated PostgreSQL test database.
 - Added strict `.txt`/`.md` UTF-8 guidance validation, raw-byte SHA-256, and NFC/LF text normalisation for exact-span chunking.
-- Added the first Admin source upload route: authorise, validate, store the private original, insert a pending source version and ingestion job in one database transaction, then return `202`. A failed database write attempts to remove the private orphan object.
+- Added the first Admin source upload route: authorise, validate, store the private original, insert a pending source version and ingestion job in one database transaction, then return `202`. A failed database write attempts to remove the private orphan object. Upload idempotency keys replay the matching result and reject changed or expired requests.
+- Added Admin approval of an ingested source version. The transaction locks the organisation and source, checks the corpus version, ready/pending status, passages, and organisation-local effective dates, then archives the previous approved version and increments the corpus version.
 - Verified the upload route with an offline HTTP test and fake database/storage dependencies. This does not establish that live R2 or PostgreSQL ingestion works.
-- Verified 47 backend tests, Ruff across app/tests/migrations, and `pip check`. The only test warning is a Starlette/httpx deprecation notice from the installed test client.
+- Verified 55 backend tests, Ruff across app/tests/migrations, and `pip check`. The only test warning is a Starlette/httpx deprecation notice from the installed test client.
 
 ### Next backend work
 
 - Verify migrations and queue/source SQL on a disposable PostgreSQL database before using Render.
-- Add the worker ingestion handler, local E5 embeddings, passage persistence, source approval, and retrieval eligibility checks.
+- Add the worker ingestion handler, local E5 embeddings, passage persistence, and retrieval eligibility checks; current approval requires ready passages and therefore cannot complete a real upload until ingestion exists.
 - Complete draft submission, review findings, reviewer follow-ups, and frontend integration.

@@ -1,6 +1,6 @@
 # VeriLoom
 
-VeriLoom is a text-first brand review platform being built for the hackathon. The product workflow and interfaces are specified in [Docs/PRESENTATION.md](Docs/PRESENTATION.md) and [Docs/Product specification/README.md](Docs/Product%20specification/README.md). The backend now includes authentication, organisations, a first Admin guidance upload route, private R2 storage, and durable queue primitives. Worker ingestion and the complete review workflow are still being built.
+VeriLoom is a text-first brand review platform being built for the hackathon. The product workflow and interfaces are specified in [Docs/PRESENTATION.md](Docs/PRESENTATION.md) and [Docs/Product specification/README.md](Docs/Product%20specification/README.md). The backend now includes authentication, organisations, Admin guidance upload and approval routes, private R2 storage, and durable queue primitives. Worker ingestion and the complete review workflow are still being built.
 
 ## Local backend setup
 
