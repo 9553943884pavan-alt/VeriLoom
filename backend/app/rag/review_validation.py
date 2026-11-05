@@ -8,6 +8,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.rag.evidence_support import reject_obviously_unrelated_evidence
+
 
 class EvidenceClaim(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -75,22 +77,50 @@ def validate_review(
     *,
     revision_text: str,
     supplied_passages: dict[UUID, str],
+    quality_filter: bool = False,
 ) -> ValidatedReview:
     """Reject fabricated evidence and compute code-point anchors without guessing.
 
-    This proves exact provenance, not semantic entailment. Human review remains
-    necessary for whether a quoted rule actually supports a model finding.
+    This proves exact provenance, not semantic entailment. The optional filter
+    rejects only a few obvious mistakes and is off in the worker pending a
+    fresh independent holdout. Human review remains necessary.
     """
     candidate = CandidateReview.model_validate(payload)
     validated: list[ValidatedFinding] = []
+    discarded_unsupported = False
     for finding in candidate.findings:
         for claim in finding.evidence:
             passage = supplied_passages.get(claim.passage_id)
             if passage is None or claim.supporting_quote not in passage:
                 raise ValueError("finding cites absent or inexact supplied evidence")
+        if quality_filter and finding.evidence_status == "supported":
+            try:
+                reject_obviously_unrelated_evidence(
+                    category=finding.category,
+                    supporting_quotes=tuple(claim.supporting_quote for claim in finding.evidence),
+                )
+            except ValueError:
+                discarded_unsupported = True
+                continue
         quote = finding.quote
         if quote is not None and quote not in revision_text:
             raise ValueError("finding quote is not in immutable revision")
+        if quality_filter and finding.suggested_edit == quote:
+            finding = finding.model_copy(update={"suggested_edit": None})
+        # The model sometimes labels an already-correct preferred term as an
+        # issue. Suppress only its own explicit no-change assessment.
+        if (
+            quality_filter
+            and finding.category == "terminology"
+            and quote is not None
+            and finding.evidence_status == "supported"
+            and finding.evidence
+            and all(claim.supporting_quote.strip().casefold() == f"preferred term: {quote}.".casefold()
+                    for claim in finding.evidence)
+            and any(phrase in finding.explanation.casefold()
+                    for phrase in ("no change needed", "already uses the correct preferred term"))
+        ):
+            continue
         if quote is None or revision_text.count(quote) != 1:
             start = end = None
         else:
@@ -101,6 +131,9 @@ def validate_review(
         validated.append(ValidatedFinding(finding, start, end))
 
     coverage, reason = candidate.coverage, candidate.coverage_reason
+    if discarded_unsupported and coverage == "sufficient":
+        coverage = "partial"
+        reason = "A finding cited unrelated guidance and needs human review."
     if not supplied_passages:
         coverage = "insufficient"
         reason = "No approved guidance was available for this review; a human must check the draft."

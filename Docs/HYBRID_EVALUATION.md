@@ -112,3 +112,24 @@ After freezing the candidate pipeline in commit `97dde3a`, a separate author cre
 The purpose query recovered no additional candidate groups and displaced the `ordering_service` group from the final eight in long-draft case S2-HO-07. Both variants missed `uncertainty_rule` in S2-HO-08, `nutrition_absence` in S2-HO-09 and `dietary_information` in S2-HO-10. This is a small fictional corpus and incomplete qrel set, but it directly fails to confirm the development improvement. Holdout latency (about 97 ms Stage 1, 59 ms purpose) is not comparable: the Stage 1 variant ran first in the same cold serial process, so those numbers are not evidence of a speed gain. The development latency and Windows process-memory observations above remain the bounded resource evidence.
 
 The release decision is conservative: the worker retains the Stage 1 query plan and final selector by default. The Stage 2 planner, provenance code, ablation scripts and tests remain available as an explicit experiment; no query template, source label, model or ranking parameter was adjusted using the fresh holdout. Disabling the experimental worker path is a release gate, not a holdout-tuned ranking change. This holdout has now been observed and must not be used as an unseen final test for future revisions. A new independently authored set and a worker-sized memory/latency run are needed before enabling purpose queries or a reranker. AI-generated finding quality is still separate and unmeasured here.
+
+## Stage 3 finding-quality diagnostic, 2026-11-05
+
+Finding quality is measured separately from retrieval above. The prior approved Sarvam probe remains the only live generation observation: NK-16 produced one expected and two unwanted findings; NK-21 was rejected by Pydantic. Its raw candidate and field-level error were not retained, so its exact failure cannot be reconstructed. No Stage 3 provider call or production database change was made.
+
+`backend/scripts/evaluate_stage3_findings.py` replays seven authored **development** candidate JSON objects against the baseline validator at commit `6278953` and the optional Stage 3 filter. Cases include NK-16-like unsupported nutrition, an already-correct term, a real prohibited ranking, an unavailable nutrition value, strict-schema rejection, a clean Hindi sentence, and two claims in one draft. Labels are read only for offline scoring; no candidate is sent to a model. A matching issue requires its authored category and exact draft quote. These scores measure validator behavior on authored candidates, **not** live model accuracy or general semantic support.
+
+| Development replay measure | Baseline validator | Optional Stage 3 filter |
+|---|---:|---:|
+| Expected findings retained | 5/5 | 5/5 |
+| Unwanted findings retained | 3 | 0 |
+| Replay precision / recall | 0.625 / 1.000 | 1.000 / 1.000 |
+| Clean cases with a false finding | 1 | 0 |
+| Unwanted findings carrying a citation | 3 | 0 |
+| Identical suggested edits | 3 | 0 |
+| Strict-schema rejected outputs | 1 | 1 |
+| Evidence-status accuracy on matched issues | 5/5 | 5/5 |
+
+One local serial run measured mean validator time around 0.06 ms baseline and 0.05 ms optional filter over seven cases. These tiny differences are noise and exclude retrieval, provider, database and worker time. The filter rejects only a bare `Preferred term: ...` quote used to support a different issue category, suppresses only an explicit already-correct term finding, and clears an exact no-op edit. It does not establish broad citation entailment, detect contradictory guidance generally, or verify live multilingual, long-draft or follow-up generation.
+
+**Release decision:** Keep the worker's previous validator path by default. The `quality_filter=True` path is opt-in because an independently authored new Stage 3 holdout was not available: all three delegated agents encountered an account usage limit before completing independent work. The observed Stage 2 holdout is not a substitute. A fresh independent holdout authored after this candidate is frozen, followed by a bounded synthetic provider/worker run and disposable end-to-end review check, is required before enabling the filter. No Stage 3 holdout score is claimed.

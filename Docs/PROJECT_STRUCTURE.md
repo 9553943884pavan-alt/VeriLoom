@@ -32,6 +32,7 @@ Small related screens are deliberately grouped within feature modules, following
 | `backend/tests/integration/live_source_sql_smoke.py` | Disposable database checks for migrations 006/007, source lifecycle/evidence and provider provenance. |
 | `backend/tests/integration/live_retrieval_sql_smoke.py` | Read-only production retrieval SQL over synthetic CTE relations: real pgvector versus local cosine, with optional create/drop of a separate disposable database; no application records or schema changes. |
 | `backend/tests/unit/test_review_decision_read.py` | Participant access, nullable human decision summary and decision query scope. |
+| `backend/app/rag/evidence_support.py`, `backend/scripts/evaluate_stage3_findings.py`, `data/evaluation/finding_candidates_stage3_dev.jsonl` | Opt-in, narrow finding-quality checks and development-only candidate replay. The worker retains its prior validator default pending independent holdout. |
 
 `[existing]` means the file is already in the workspace. `[planned]` means it belongs to the implementation plan; every child of a planned directory is also planned. Unmarked children of an existing directory already exist unless labelled otherwise. Descriptive Alembic revision names below may gain generated revision IDs.
 
