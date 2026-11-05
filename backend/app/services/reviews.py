@@ -3,6 +3,7 @@
 import hashlib
 import json
 import base64
+import binascii
 from datetime import datetime
 from uuid import UUID
 
@@ -57,7 +58,7 @@ def _cursor(cursor: str | None) -> tuple[datetime, UUID] | None:
     try:
         created_at, item_id = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
         return datetime.fromisoformat(created_at), UUID(item_id)
-    except (ValueError, TypeError, IndexError) as exc:
+    except (ValueError, TypeError, IndexError, binascii.Error) as exc:
         raise ApiError(422, "invalid_cursor", "The page cursor is invalid.") from exc
 
 

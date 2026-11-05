@@ -21,7 +21,12 @@ from app.jobs.handlers.review_revision import SYSTEM_PROMPT
 from app.rag.answer_validation import RewriteCandidate, validate_answer
 from app.rag.retrieval.evidence_selection import select_interleaved
 from app.rag.retrieval.followup import route_followup
-from app.rag.retrieval.hybrid import CorpusChanged, retrieve_evidence
+from app.rag.retrieval.hybrid import (
+    CorpusChanged,
+    normalize_search_query,
+    query_within_bounds,
+    retrieve_evidence,
+)
 from app.rag.retrieval.query_planning import QUERY_PLANNER_VERSION, augment_queries
 
 ROUTER_VERSION = "followup_router/1.1.0"
@@ -213,9 +218,10 @@ def _select(db: Session, *, org_id: UUID, turn_id: UUID, embedder: FollowupEmbed
         passages = []
     else:
         assert query is not None
-        if embedder.count_tokens("query: " + query) > 512:
+        search_query = normalize_search_query(query)
+        if not query_within_bounds(search_query, embedder):
             raise AnswerFailure("query_token_limit_unusable")
-        queries = augment_queries([query], embedder) if purpose_queries else [query]
+        queries = augment_queries([search_query], embedder) if purpose_queries else [search_query]
         try:
             results_by_query = [retrieve_evidence(
                 db, org_id=org_id, as_of=as_of, query=search_query,

@@ -121,6 +121,36 @@ def test_followup_snapshots_before_provider_and_publishes_exact_citation(monkeyp
     assert (published["provider_id"], published["model_id"]) == ("indierouter", "fallback-model")
 
 
+def test_padded_followup_query_uses_normalized_search_bounds(monkeypatch):
+    import app.jobs.handlers.answer_question as handler
+
+    question = "May" + " " * 700 + "we say best?"
+
+    class PaddedDB(FakeDB):
+        def execute(self, statement, params):
+            result = super().execute(statement, params)
+            if "SELECT t.id,t.review_id" in str(statement):
+                result.row["question"] = question
+            return result
+
+    db = PaddedDB()
+    searched = []
+
+    def retrieve(_db, **kwargs):
+        searched.append(kwargs["query"])
+        return evidence()
+
+    monkeypatch.setattr(handler, "retrieve_evidence", retrieve)
+    _, selected, _, route, _, stored_query = _select(
+        db, org_id=ORG, turn_id=TURN, embedder=Embedder(), chat=Chat(db),
+        today=date(2026, 11, 4),
+    )
+    assert route == "fresh_retrieve"
+    assert stored_query == question
+    assert searched == ["May we say best?"]
+    assert selected[0]["passage_id"] == PASSAGE
+
+
 def test_no_current_evidence_abstains_without_provider(monkeypatch):
     import app.jobs.handlers.answer_question as handler
 

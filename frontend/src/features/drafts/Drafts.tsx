@@ -71,12 +71,16 @@ export function AssignedDraft() {
     queryFn: () => api<Draft>(`/organisations/${org.org_id}/drafts/${draftId}`),
   });
   if (!org.roles.includes("reviewer")) return <h1>Access denied</h1>;
-  return draft.data?.review_id ? (
-    <ReviewWorkspace reviewId={draft.data.review_id} />
-  ) : (
+  if (draft.data?.review_id)
+    return <ReviewWorkspace reviewId={draft.data.review_id} />;
+  return (
     <>
       <ErrorNotice error={draft.error} />
-      <p>Loading assigned review…</p>
+      {draft.isPending ? (
+        <p role="status">Loading assigned review…</p>
+      ) : !draft.error ? (
+        <p role="status">This draft has no submitted review yet.</p>
+      ) : null}
     </>
   );
 }

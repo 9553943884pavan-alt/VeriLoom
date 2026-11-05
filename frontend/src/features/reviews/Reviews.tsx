@@ -221,8 +221,8 @@ export function ReviewWorkspace({
                   )}
                   {working && (
                     <small>
-                      Save the working copy after applying. If it has changed
-                      since submission, edit the suggestion manually.
+                      Save the working copy after applying. If the copy changed
+                      or a full sentence targets only a phrase, edit manually.
                     </small>
                   )}
                 </section>

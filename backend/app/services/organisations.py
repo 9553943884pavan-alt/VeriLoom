@@ -1,6 +1,7 @@
 """Organisation membership, reviewer discovery, and invitation workflows."""
 
 import base64
+import binascii
 import hmac
 import re
 import secrets
@@ -31,7 +32,7 @@ def _decode_cursor(cursor: str | None) -> UUID | None:
     try:
         raw = base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4))
         return UUID(bytes=raw)
-    except (ValueError, TypeError) as exc:
+    except (ValueError, TypeError, binascii.Error) as exc:
         raise ApiError(422, "invalid_cursor", "The page cursor is invalid.") from exc
 
 

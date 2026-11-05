@@ -21,7 +21,8 @@ export function applySuggestion(
   if (
     !anchor ||
     working.normalize("NFC") !== submitted.normalize("NFC") ||
-    !anchorMatches(submitted, anchor)
+    !anchorMatches(submitted, anchor) ||
+    (/[.!?]\s*$/.test(replacement) && !/[.!?]\s*$/.test(anchor.quote))
   )
     return null;
   const points = codepoints(working);

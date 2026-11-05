@@ -24,4 +24,19 @@ describe("immutable NFC codepoint anchors", () => {
     expect(anchorMatches("best", { ...a, start_codepoint: -1 })).toBe(false);
     expect(applySuggestion("best", "best", null, "local")).toBeNull();
   });
+  it("requires manual editing when a sentence suggestion targets only a phrase", () => {
+    const submitted = "Our coffee is the best.";
+    const phrase = { start_codepoint: 14, end_codepoint: 22, quote: "the best" };
+    expect(
+      applySuggestion(submitted, submitted, phrase, "Our coffee is freshly roasted."),
+    ).toBeNull();
+    const sentence = {
+      start_codepoint: 0,
+      end_codepoint: submitted.length,
+      quote: submitted,
+    };
+    expect(
+      applySuggestion(submitted, submitted, sentence, "Our coffee is freshly roasted."),
+    ).toBe("Our coffee is freshly roasted.");
+  });
 });

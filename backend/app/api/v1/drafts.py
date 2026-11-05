@@ -28,8 +28,8 @@ def create_draft(org_id: UUID, payload: DraftCreate, user: dict = Depends(signed
 
 
 @router.get("/{org_id}/drafts")
-def list_drafts(org_id: UUID, view: str = "mine", cursor: str | None = None, state: str | None = None, limit: int = Query(20, ge=1, le=100), user: dict = Depends(signed_in_user), db: Session = Depends(get_session)) -> dict:
-    return drafts.listing(db, org_id=org_id, user_id=user["id"], view=view, state=state, cursor=cursor, limit=limit)
+def list_drafts(org_id: UUID, view: str = "mine", cursor: str | None = None, status_filter: str | None = Query(None, alias="status"), limit: int = Query(20, ge=1, le=100), user: dict = Depends(signed_in_user), db: Session = Depends(get_session)) -> dict:
+    return drafts.listing(db, org_id=org_id, user_id=user["id"], view=view, state=status_filter, cursor=cursor, limit=limit)
 
 
 @router.get("/{org_id}/drafts/{draft_id}")

@@ -1,6 +1,7 @@
 """Creator draft lifecycle and scoped revision access."""
 
 import base64
+import binascii
 import hashlib
 import json
 import unicodedata
@@ -21,7 +22,7 @@ def _cursor(cursor: str | None) -> UUID | None:
         return None
     try:
         return UUID(bytes=base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
-    except (ValueError, TypeError) as exc:
+    except (ValueError, TypeError, binascii.Error) as exc:
         raise ApiError(422, "invalid_cursor", "The page cursor is invalid.") from exc
 
 
