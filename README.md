@@ -4,6 +4,29 @@ VeriLoom is a text-first brand review platform being built for the hackathon. Th
 
 The React MVP is in `frontend/`. Its local browser check completed the Admin → Creator → Reviewer → Creator → Reviewer workflow with real PostgreSQL, R2, E5 and Sarvam, including revision history and human decision reasons. The measured retrieval and model-output limits are documented in [Docs/HYBRID_EVALUATION.md](Docs/HYBRID_EVALUATION.md); workflow completion does not establish review accuracy.
 
+## RAG evaluation and latency
+
+These are **local synthetic-fixture measurements from 2026-11-05**, not real-world accuracy or deployed performance. The retriever uses pinned local multilingual E5 embeddings, BM25Plus and reciprocal-rank fusion (RRF), then selects at most eight passages. The default worker uses the Stage 1 query plan and finding validator; the Stage 2 purpose-query planner and Stage 3 finding filter remain opt-in after their release checks.
+
+| Retrieval result | Default Stage 1 | Experimental purpose queries | Interpretation |
+|---|---:|---:|---|
+| Development: required evidence groups in candidate pool | 23/25 | 25/25 | 20 authored cases; four unavailable groups excluded. |
+| Development: required groups in final eight | 20/25 | 25/25 | The experimental gain was measured on development cases only. |
+| Fresh Stage 2 holdout: candidate groups | 14/17 | 14/17 | 12 independently authored synthetic cases. |
+| Fresh Stage 2 holdout: final-eight groups | **14/17** | 13/17 | The experiment lost one group, so it was not enabled by default. |
+
+Both variants used the same 45 approved fictional knowledge records and pinned E5 model. The development and holdout evaluations ran the production Python retrieval logic with exact-cosine SQL **simulated locally**; they did not measure PostgreSQL network or deployed latency. A separate disposable, migrated PostgreSQL/pgvector test verified Markdown ingestion, stored vectors, scoped SQL retrieval, and exclusion of ineligible source versions and other tenants. See [the full retrieval methods and case results](Docs/HYBRID_EVALUATION.md#stage-1-development-only-retrieval-baseline-2026-11-05).
+
+| Measured time or resource | Observation | Boundary |
+|---|---:|---|
+| Default Stage 1 retrieval | 43.879 ms mean; 49.670 ms p95 | One local 20-case serial development run; includes query embedding, simulated cosine, BM25 and fusion. |
+| Purpose-query retrieval | 55.0 ms mean vs 38.5 ms default | One warm local comparison; extra searches added cost. A second run measured 55.6 vs 40.9 ms. |
+| E5 model load and 45 passage embeddings | 12.612 s and 1.113 s | Separate from the Stage 1 retrieval timing above. |
+| E5-loaded Windows process working set | About 807 MB | Local process observation, not a Render worker peak. |
+| Sarvam generation | 3.291 s mean | Three recorded synthetic `sarvam-105b` completions; excludes retrieval, database and worker time. |
+
+Finding quality was evaluated separately. On a frozen 16-case **authored candidate replay**, the default validator had 9 true positives, 5 false positives and 2 false negatives; an optional filter reduced false positives to 1 but also lost a genuine finding (8 true positives, 3 false negatives). In the three live synthetic Sarvam cases, both validators retained the same outputs, including an unwanted finding on compliant text. The filter therefore remains off by default. These small tests do not establish general finding accuracy, citation meaning, follow-up quality or full end-to-end latency. [Finding-quality results and release decision](Docs/HYBRID_EVALUATION.md#stage-3-independent-release-gate-assessment-2026-11-05).
+
 ## Local backend setup
 
 Use Python 3.12. If the Windows `py` launcher says no Python is installed, locate the installed `python.exe` and use its full path for the first command.
