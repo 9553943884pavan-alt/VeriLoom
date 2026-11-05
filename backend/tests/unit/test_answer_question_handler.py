@@ -50,6 +50,7 @@ class FakeDB:
                                "question": "May we say best?", "state": "queued",
                                "created_at": datetime.now(timezone.utc),
                                "revision_id": REVISION, "review_state": "ready_for_review",
+                               "coverage": "sufficient", "coverage_reason": None,
                                "current_revision_id": REVISION,
                                "content_nfc": "Our coffee is best.", "channel": "social_post",
                                "corpus_version": 3, "timezone": "Asia/Calcutta"})
@@ -151,6 +152,80 @@ def test_padded_followup_query_uses_normalized_search_bounds(monkeypatch):
     assert selected[0]["passage_id"] == PASSAGE
 
 
+def test_review_coverage_question_explains_stored_reason_without_brand_citation(monkeypatch):
+    import app.jobs.handlers.answer_question as handler
+
+    class CoverageDB(FakeDB):
+        def execute(self, statement, params):
+            result = super().execute(statement, params)
+            if "SELECT t.id,t.review_id" in str(statement):
+                result.row.update({
+                    "question": "How it is insufficient",
+                    "coverage": "insufficient",
+                    "coverage_reason": "No approved Naruto guidance is available for this review.",
+                })
+            return result
+
+    db = CoverageDB()
+    chat = Chat(db)
+    monkeypatch.setattr(handler, "retrieve_evidence", lambda *_args, **_kwargs:
+                        pytest.fail("coverage diagnostic must not search brand evidence"))
+    answer_question(db, org_id=ORG, turn_id=TURN, embedder=Embedder(), chat=chat,
+                    today=date(2026, 11, 4))
+
+    assert chat.calls == 0
+    published = next(params for sql, params in db.calls
+                     if "answer_status=:answer_status" in sql)
+    assert (published["route"], published["answer_status"]) == ("abstain", "insufficient_evidence")
+    assert "No approved Naruto guidance" in published["answer"]
+    assert "stored review diagnostic" in published["answer"]
+    assert not any("INSERT INTO chat_citations" in sql for sql, _ in db.calls)
+
+
+def test_selected_finding_suggestion_is_context_for_grounded_refinement(monkeypatch):
+    import app.jobs.handlers.answer_question as handler
+
+    finding_id = UUID("88888888-8888-4888-8888-888888888888")
+
+    class FindingDB(FakeDB):
+        def execute(self, statement, params):
+            sql = str(statement)
+            if "SELECT quote,explanation,suggested_edit FROM findings" in sql:
+                self.calls.append((sql, params))
+                return Result(row={"quote": "best", "explanation": "Avoid unproved superlatives.",
+                                   "suggested_edit": "Our coffee is fresh."})
+            result = super().execute(statement, params)
+            if "SELECT t.id,t.review_id" in sql:
+                result.row["finding_id"] = finding_id
+                result.row["question"] = "Can you improve this suggested edit?"
+            return result
+
+    class RefinementChat(Chat):
+        def complete_json(self, messages, *, schema_name, schema, max_tokens):
+            payload = json.loads(messages[-1]["content"])
+            assert payload["finding"]["suggested_edit"] == "Our coffee is fresh."
+            if schema_name == "veriloom_rewrite_followup_v2":
+                assert payload["review_coverage"]["status"] == "sufficient"
+                return {"needs_clarification": False,
+                        "standalone_query": "Approved wording for coffee freshness",
+                        "clarification_question": None}
+            assert schema_name == "veriloom_grounded_answer_v2"
+            assert payload["current_evidence"][0]["text"] == "Do not say best."
+            return {"answer_status": "insufficient_evidence",
+                    "answer": "Current guidance does not support a freshness claim. Please verify wording with the brand administrator.",
+                    "evidence": []}
+
+    db = FindingDB()
+    monkeypatch.setattr(handler, "retrieve_evidence", lambda *_args, **_kwargs: evidence())
+    answer_question(db, org_id=ORG, turn_id=TURN, embedder=Embedder(),
+                    chat=RefinementChat(db), today=date(2026, 11, 4))
+    published = next(params for sql, params in db.calls
+                     if "answer_status=:answer_status" in sql)
+    assert published["answer_status"] == "insufficient_evidence"
+    assert published["route"] == "rewrite_retrieve"
+    assert not any("UPDATE findings" in sql for sql, _ in db.calls)
+
+
 def test_no_current_evidence_abstains_without_provider(monkeypatch):
     import app.jobs.handlers.answer_question as handler
 
@@ -179,9 +254,10 @@ def test_new_topic_does_not_reuse_selected_finding_evidence(monkeypatch):
                 result.row["finding_id"] = finding_id
                 result.row["question"] = "What source confirms the refund policy?"
                 return result
-            if "SELECT quote,explanation FROM findings" in sql:
+            if "SELECT quote,explanation,suggested_edit FROM findings" in sql:
                 self.calls.append((sql, params))
-                return Result(row={"quote": "best", "explanation": "Do not say best."})
+                return Result(row={"quote": "best", "explanation": "Do not say best.",
+                                   "suggested_edit": "Use the approved wording."})
             if "SELECT count(*) FROM finding_citations" in sql:
                 self.calls.append((sql, params))
                 return Result(scalar=1)
@@ -209,6 +285,47 @@ def test_new_topic_does_not_reuse_selected_finding_evidence(monkeypatch):
     published = next(p for sql, p in db.calls if "answer_status=:answer_status" in sql)
     assert published["route"] == "abstain"
     assert published["answer_status"] == "insufficient_evidence"
+
+
+def test_direct_finding_source_question_uses_current_exact_citation_without_model(monkeypatch):
+    import app.jobs.handlers.answer_question as handler
+
+    finding_id = UUID("88888888-8888-4888-8888-888888888888")
+
+    class FindingDB(FakeDB):
+        def execute(self, statement, params):
+            sql = str(statement)
+            if "SELECT t.id,t.review_id" in sql:
+                result = super().execute(statement, params)
+                result.row["finding_id"] = finding_id
+                result.row["question"] = "Which source supports this finding?"
+                return result
+            if "SELECT quote,explanation,suggested_edit FROM findings" in sql:
+                self.calls.append((sql, params))
+                return Result(row={"quote": "best", "explanation": "The phrase is prohibited.",
+                                   "suggested_edit": "Use approved wording."})
+            if "SELECT count(*) FROM finding_citations" in sql:
+                self.calls.append((sql, params))
+                return Result(scalar=1)
+            return super().execute(statement, params)
+
+    db = FindingDB()
+    chat = Chat(db)
+    monkeypatch.setattr(handler, "_current_finding_evidence", lambda *_args, **_kwargs: [{
+        "passage_id": PASSAGE, "source_ref": "SRC#1", "source_id": SOURCE,
+        "version_id": VERSION, "source_version": "1.0", "title": "Voice",
+        "text": "Do not say best.", "cited_excerpt": "Do not say best.",
+        "effective_from": date(2026, 1, 1),
+    }])
+    answer_question(db, org_id=ORG, turn_id=TURN, embedder=Embedder(), chat=chat,
+                    today=date(2026, 11, 4))
+    assert chat.calls == 0
+    cited = next(p for sql, p in db.calls if "INSERT INTO chat_citations" in sql)
+    assert cited["excerpt"] == "Do not say best."
+    published = next(p for sql, p in db.calls if "answer_status=:answer_status" in sql)
+    assert published["answer_status"] == "answered"
+    assert published["route"] == "reuse_evidence"
+    assert (published["provider_id"], published["model_id"]) == (None, None)
 
 
 def test_followup_purpose_search_keeps_selected_evidence_query_provenance(monkeypatch):

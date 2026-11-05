@@ -26,13 +26,38 @@ _DIRECT_FINDING = re.compile(
     rf"for {_FINDING_REFERENCE})[?.!]*",
     re.I,
 )
+_FINDING_SOURCE_QUESTION = re.compile(
+    rf"(?:what|which) (?:approved )?(?:sources?|citations?|evidence) "
+    rf"supports? {_FINDING_REFERENCE}[?.!]*",
+    re.I,
+)
 _REFERENCE_ONLY = re.compile(r"^(why|how|what about (that|it)|and (that|it))\??$", re.I)
+_REVIEW_COVERAGE_QUESTION = re.compile(
+    r"^(?:(?:why|how)\s+(?:(?:is|was)\s+)?(?:it|this|the review|the coverage|evidence coverage)\s+"
+    r"(?:(?:is|was)\s+)?(?:insufficient|partial)"
+    r"|(?:why|how)\s+(?:(?:is|was)\s+)?(?:review\s+)?(?:evidence\s+)?coverage\s+"
+    r"(?:(?:is|was)\s+)?(?:insufficient|partial))[?.!]*$",
+    re.I,
+)
 
 
 @dataclass(frozen=True, slots=True)
 class FollowupRoute:
     route: Route
     reason: str
+
+
+def asks_about_review_coverage(question: str) -> bool:
+    """Identify narrow requests to explain the persisted review diagnostic.
+
+    This never establishes a brand fact and must not be used as retrieval evidence.
+    """
+    return bool(_REVIEW_COVERAGE_QUESTION.fullmatch(" ".join(question.split())))
+
+
+def asks_for_finding_source(question: str) -> bool:
+    """Only match a direct request for the selected finding's current citation."""
+    return bool(_FINDING_SOURCE_QUESTION.fullmatch(" ".join(question.split())))
 
 
 def route_followup(

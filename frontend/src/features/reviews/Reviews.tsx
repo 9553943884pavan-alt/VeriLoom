@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useOrg, useSession } from "../../app/context";
 import { api, ApiError } from "../../lib/api/client";
 import { pollInterval } from "../../lib/polling";
@@ -51,6 +51,168 @@ export function Citation({ citation }: { citation: Evidence }) {
     </div>
   );
 }
+
+export function ChatHistory({ turns }: { turns: Question[] }) {
+  const threadRef = useRef<HTMLDivElement>(null);
+  const previousCount = useRef(turns.length);
+  useEffect(() => {
+    if (turns.length > previousCount.current && threadRef.current) {
+      threadRef.current.scrollTo({ top: threadRef.current.scrollHeight, behavior: "smooth" });
+    }
+    previousCount.current = turns.length;
+  }, [turns.length]);
+  if (turns.length === 0)
+    return (
+      <div className="chat-empty">
+        <strong>Start a conversation about this review</strong>
+        <p>Ask why a passage was cited, clarify a finding, or request another grounded edit.</p>
+      </div>
+    );
+  return (
+    <div className="chat-thread" aria-label="Reviewer AI conversation" aria-live="polite" ref={threadRef}>
+      {turns.map((turn) => (
+        <article className="chat-turn" key={turn.turn_id}>
+          <div className="chat-message chat-user">
+            <span className="chat-speaker">Reviewer</span>
+            <p>{turn.question}</p>
+          </div>
+          <div className="chat-message chat-assistant">
+            <span className="chat-speaker">VeriLoom AI</span>
+            {turn.state === "completed" ? (
+              <>
+                {turn.answer_status && (
+                  <p className="chat-status"><Status value={turn.answer_status} /></p>
+                )}
+                <p>{turn.answer}</p>
+                {turn.citations.length > 0 && (
+                  <div className="chat-citations">
+                    <strong>Approved sources</strong>
+                    {turn.citations.map((citation) => (
+                      <Citation key={citation.passage_id} citation={citation} />
+                    ))}
+                  </div>
+                )}
+                {turn.route && <small className="chat-meta">Evidence route: {turn.route.replaceAll("_", " ")}</small>}
+              </>
+            ) : turn.state === "failed" ? (
+              <p className="chat-error" role="alert">This answer failed. You can ask again while the review is open.</p>
+            ) : (
+              <p className="chat-status" role="status">Searching approved guidance and preparing an answer…</p>
+            )}
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+export function suggestedQuestions(
+  selected?: Review["findings"][number],
+  coverage?: Review["coverage"],
+) {
+  return selected
+    ? ["Why was this finding flagged?", "Which source supports this finding?", ...(selected.suggested_edit ? ["Suggest a different edit grounded in approved guidance."] : [])]
+    : ["Which approved guidance applies to this draft?", ...(coverage === "partial" || coverage === "insufficient" ? [`Why is evidence coverage ${coverage}?`] : [])];
+}
+
+export function ChatComposer({
+  path,
+  revisionId,
+  findings,
+  coverage,
+}: {
+  path: string;
+  revisionId: string;
+  findings: Review["findings"];
+  coverage: Review["coverage"];
+}) {
+  const client = useQueryClient();
+  const [findingId, setFindingId] = useState("");
+  const [question, setQuestion] = useState("");
+  const [validation, setValidation] = useState("");
+  const pendingKey = useRef<{ question: string; findingId: string; key: string } | null>(null);
+  const selected = findings.find((f) => f.finding_id === findingId);
+  const action = useMutation({
+    mutationFn: async () => {
+      const trimmed = question.trim();
+      if (!trimmed || Array.from(trimmed).length > 2000)
+        throw new Error("Enter a question between 1 and 2,000 characters.");
+      const prior = pendingKey.current;
+      const key = prior?.question === trimmed && prior.findingId === findingId
+        ? prior.key : crypto.randomUUID();
+      pendingKey.current = { question: trimmed, findingId, key };
+      return api(`${path}/questions`, "POST", {
+        revision_id: revisionId,
+        ...(findingId ? { finding_id: findingId } : {}),
+        question: trimmed,
+      }, key);
+    },
+    onSuccess: async () => {
+      setQuestion("");
+      setValidation("");
+      pendingKey.current = null;
+      await client.invalidateQueries({ queryKey: ["page", `${path}/questions`] });
+    },
+  });
+  const prompts = suggestedQuestions(selected, coverage);
+  return (
+    <form className="chat-composer" onSubmit={(event) => {
+      event.preventDefault();
+      const length = Array.from(question.trim()).length;
+      if (length < 1 || length > 2000) {
+        setValidation("Enter a question between 1 and 2,000 characters.");
+        return;
+      }
+      setValidation("");
+      action.mutate();
+    }}>
+      <label className="chat-context">
+        <span>Ask about</span>
+        <select value={findingId} onChange={(event) => setFindingId(event.target.value)}>
+          <option value="">Whole review</option>
+          {findings.map((finding) => (
+            <option key={finding.finding_id} value={finding.finding_id}>
+              {finding.category}: {finding.explanation.slice(0, 60)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="chat-suggestion-prompts" aria-label="Suggested questions">
+        {prompts.map((prompt) => (
+          <button className="secondary" type="button" key={prompt} onClick={() => setQuestion(prompt)}>
+            {prompt}
+          </button>
+        ))}
+      </div>
+      <label className="chat-question">
+        <span>Your question</span>
+        <textarea
+          value={question}
+          onChange={(event) => { setQuestion(event.target.value); setValidation(""); }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }
+          }}
+          rows={3}
+          placeholder="Ask about a finding, source, or a safer edit…"
+          aria-describedby="chat-composer-help"
+          disabled={action.isPending}
+        />
+      </label>
+      <div className="chat-composer-footer">
+        <small id="chat-composer-help">Enter to send · Shift+Enter for a new line · {Array.from(question).length}/2,000</small>
+        <button type="submit" disabled={action.isPending || !question.trim()}>
+          {action.isPending ? "Sending…" : "Send question"}
+        </button>
+      </div>
+      {validation && <p className="chat-error" role="alert">{validation}</p>}
+      <ErrorNotice error={action.error} />
+      <small className="chat-meta">Answers use current approved guidance. Suggested edits are proposals; only the Creator changes the draft.</small>
+    </form>
+  );
+}
 export function ReviewWorkspace({
   reviewId: provided,
   working,
@@ -86,7 +248,6 @@ export function ReviewWorkspace({
   });
   const comments = usePages<Comment>(`${path}/comments`);
   const questions = usePages<Question>(`${path}/questions`);
-  const [finding, setFinding] = useState("");
   const [action, setAction] = useState("request_changes");
   const assigned =
     r?.assigned_reviewer_user_id === session.user_id &&
@@ -232,78 +393,33 @@ export function ReviewWorkspace({
               ))}
             </article>
           ))}
-          <div className="columns">
-            <section>
-              <h3>Reviewer follow-up</h3>
+          <div className="chat-review-grid">
+            <section className="chat-panel" aria-label="Review conversation">
+              <div className="chat-head">
+                <div>
+                  <p className="eyebrow">Grounded conversation</p>
+                  <h3>Ask VeriLoom AI</h3>
+                  <p>Explore findings and refine suggestions with approved source evidence. Recent turns help resolve follow-ups; they are never treated as brand rules.</p>
+                </div>
+                <span className="chat-status"><Status value={active ? "ready_for_review" : r.state} /></span>
+              </div>
               {r.state === "approved" && (
-                <p>This revision is approved and read-only. Ask new AI questions on a review that is ready for review, before making a decision.</p>
+                <p className="chat-meta">This revision is approved and read-only. Earlier answers remain below. Ask new questions on a review that is ready for review.</p>
               )}
               {r.state === "changes_requested" && (
-                <p>Questions are closed for this revision. Ask follow-ups after the Creator submits the next revision and its review is ready.</p>
+                <p className="chat-meta">Questions are closed for this revision. Ask follow-ups after the Creator submits the next revision and its review is ready.</p>
               )}
               <ErrorNotice error={questions.error} />
-              {questions.data?.pages
-                .flatMap((p) => p.items)
-                .map((q) => (
-                  <article className="card" key={q.turn_id}>
-                    <strong>{q.question}</strong>
-                    <p>
-                      <Status value={q.state} />
-                      {q.answer_status && <Status value={q.answer_status} />}
-                    </p>
-                    {q.state === "completed" && (
-                      <>
-                        <p>{q.answer}</p>
-                        <small>Evidence route: {q.route}</small>
-                        {q.citations.map((c) => (
-                          <Citation key={c.passage_id} citation={c} />
-                        ))}
-                      </>
-                    )}
-                    {q.state === "failed" && (
-                      <p className="error">
-                        The follow-up failed. Ask again when the service is
-                        available.
-                      </p>
-                    )}
-                  </article>
-                ))}
-              <More {...questions} />
-              {assigned && active && (
-                <>
-                  <Field label="Question context">
-                    <select
-                      value={finding}
-                      onChange={(e) => setFinding(e.target.value)}
-                    >
-                      <option value="">Whole review</option>
-                      {r.findings.map((f) => (
-                        <option key={f.finding_id} value={f.finding_id}>
-                          {f.category}: {f.explanation.slice(0, 60)}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  <TextAction
-                    label="Ask a follow-up"
-                    max={2000}
-                    onSubmit={(question) =>
-                      api(
-                        `${path}/questions`,
-                        "POST",
-                        {
-                          revision_id: r.revision_id,
-                          ...(finding ? { finding_id: finding } : {}),
-                          question,
-                        },
-                        crypto.randomUUID(),
-                      )
-                    }
-                  />
-                </>
+              {questions.isPending ? (
+                <p className="chat-status" role="status">Loading conversation…</p>
+              ) : (
+                <ChatHistory turns={questions.data?.pages.flatMap((page) => page.items) ?? []} />
               )}
+              <More {...questions} />
+              {assigned && active && <ChatComposer key={r.revision_id} path={path} revisionId={r.revision_id} findings={r.findings} coverage={r.coverage} />}
+              {!assigned && active && <p className="chat-meta">Only the assigned Reviewer can ask questions. The Creator can read this conversation.</p>}
             </section>
-            <section>
+            <section className="chat-notes">
               <h3>Comments</h3>
               <ErrorNotice error={comments.error} />
               {comments.data?.pages

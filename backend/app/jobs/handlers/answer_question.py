@@ -20,7 +20,7 @@ from app.integrations.sarvam import SarvamChat, SarvamError
 from app.jobs.handlers.review_revision import SYSTEM_PROMPT
 from app.rag.answer_validation import RewriteCandidate, validate_answer
 from app.rag.retrieval.evidence_selection import select_interleaved
-from app.rag.retrieval.followup import route_followup
+from app.rag.retrieval.followup import asks_about_review_coverage, asks_for_finding_source, route_followup
 from app.rag.retrieval.hybrid import (
     CorpusChanged,
     normalize_search_query,
@@ -29,13 +29,13 @@ from app.rag.retrieval.hybrid import (
 )
 from app.rag.retrieval.query_planning import QUERY_PLANNER_VERSION, augment_queries
 
-ROUTER_VERSION = "followup_router/1.1.0"
-REWRITE_VERSION = "rewrite_followup/2.0.0"
-ANSWER_VERSION = "grounded_answer/2.0.1"
+ROUTER_VERSION = "followup_router/1.2.0"
+REWRITE_VERSION = "rewrite_followup/2.0.1"
+ANSWER_VERSION = "grounded_answer/2.0.2"
 
-REWRITE_PROMPT = """TASK: Rewrite the raw reviewer question as one standalone search query, or ask for clarification. Return exactly the three rewrite_followup_v2 JSON fields. Use the selected finding and at most four recent turns only to resolve references; prior answers are not evidence. Preserve names, numbers, dates, quotation marks, comparisons, and negation. Do not invent a source, fact, policy, conclusion, or reviewer intent. If the referent remains ambiguous, set needs_clarification=true, standalone_query=null and ask one short clarification. Otherwise set needs_clarification=false, provide one concise standalone_query, and set clarification_question=null. Do not answer the brand question."""
+REWRITE_PROMPT = """TASK: Rewrite the raw reviewer question as one standalone search query, or ask for clarification. Return exactly the three rewrite_followup_v2 JSON fields. Use the selected finding, review coverage diagnostic, and at most four recent turns only to resolve references; they are not approved brand evidence. Preserve names, numbers, dates, quotation marks, comparisons, and negation. Do not invent a source, fact, policy, conclusion, or reviewer intent. If the referent remains ambiguous, set needs_clarification=true, standalone_query=null and ask one short clarification. Otherwise set needs_clarification=false, provide one concise standalone_query, and set clarification_question=null. Do not answer the brand question."""
 
-ANSWER_PROMPT = """TASK: Answer the raw reviewer question about the immutable revision using current_evidence only. Return exactly the grounded_answer_v2 JSON fields. Selected finding and recent turns may resolve references but are not brand authority. Cite 1-3 distinct current passage IDs with exact supporting quotes only when the passages directly establish the narrow answer. If the question asks whether guidance prohibits or requires a specific phrase or action, and a passage explicitly states that rule for the same subject, answer that narrow question with a citation. Do not require an approved alternative or broader policy when the reviewer did not ask for one. If the referent is ambiguous, use clarification_needed with one question and evidence=[]. If current evidence is missing, conflicting, or too weak for the actual question, use insufficient_evidence and evidence=[]. Never approve content, apply an edit, claim to inspect images, or use model memory to fill gaps. Keep the answer at most 900 characters."""
+ANSWER_PROMPT = """TASK: Answer the raw reviewer question about the immutable revision using current_evidence only as brand authority. Return exactly the grounded_answer_v2 JSON fields. The selected finding, its suggested edit, the review coverage diagnostic, and at most four recent turns may resolve references but are not approved brand evidence. When asked to improve a suggested edit, propose wording only if current evidence supports it; explain that the proposal does not change the draft or approve it. Cite 1-3 distinct current passage IDs with exact supporting quotes only when the passages directly establish the narrow answer. If the question asks whether guidance prohibits or requires a specific phrase or action, and a passage explicitly states that rule for the same subject, answer that narrow question with a citation. Do not require an approved alternative or broader policy when the reviewer did not ask for one. If the referent is ambiguous, use clarification_needed with one question and evidence=[]. If current evidence is missing, conflicting, or too weak for the actual question, use insufficient_evidence and evidence=[]. Never approve content, apply an edit, claim to inspect images, or use model memory to fill gaps. Keep the answer at most 900 characters."""
 
 REWRITE_SCHEMA: dict[str, Any] = {
     "type": "object", "additionalProperties": False,
@@ -94,7 +94,7 @@ def _current_finding_evidence(db: Session, *, org_id: UUID, finding_id: UUID | N
     rows = db.execute(text("""
         SELECT p.id AS passage_id,p.source_ref,p.source_id,p.version_id,
                v.version_label AS source_version,p.title,p.text_content AS text,
-               v.effective_from
+               v.effective_from,c.excerpt AS cited_excerpt
         FROM finding_citations c
         JOIN source_passages p ON p.org_id=c.org_id AND p.id=c.passage_id
         JOIN source_versions v ON v.org_id=p.org_id AND v.id=p.version_id
@@ -139,7 +139,8 @@ def _select(db: Session, *, org_id: UUID, turn_id: UUID, embedder: FollowupEmbed
                                                          list[dict[str, str]], str, str | None, str | None]:
     row = db.execute(text("""
         SELECT t.id,t.review_id,t.finding_id,t.question,t.state,t.created_at,
-               r.revision_id,r.state AS review_state,d.current_revision_id,
+               r.revision_id,r.state AS review_state,r.coverage,r.coverage_reason,
+               d.current_revision_id,
                v.content_nfc,v.channel,o.corpus_version,o.time_zone AS timezone
         FROM chat_turns t
         JOIN reviews r ON r.org_id=t.org_id AND r.id=t.review_id
@@ -166,7 +167,7 @@ def _select(db: Session, *, org_id: UUID, turn_id: UUID, embedder: FollowupEmbed
     finding = None
     if turn["finding_id"]:
         finding = db.execute(text("""
-            SELECT quote,explanation FROM findings
+            SELECT quote,explanation,suggested_edit FROM findings
             WHERE org_id=:org_id AND review_id=:review_id AND id=:finding_id
         """), {"org_id": org_id, "review_id": turn["review_id"],
                "finding_id": turn["finding_id"]}).mappings().first()
@@ -188,8 +189,15 @@ def _select(db: Session, *, org_id: UUID, turn_id: UUID, embedder: FollowupEmbed
     clarification: str | None = None
     rewrite_provider_id: str | None = None
     rewrite_model_id: str | None = None
+    coverage = {"status": turn["coverage"], "reason": turn["coverage_reason"]}
     context = {"question": turn["question"], "finding": dict(finding) if finding else None,
-               "recent_turns": recent}
+               "review_coverage": coverage, "recent_turns": recent}
+    if (finding is None and turn["coverage"] in {"partial", "insufficient"}
+            and turn["coverage_reason"] and asks_about_review_coverage(turn["question"])):
+        route = "abstain"
+        clarification = ("This review marked coverage " + turn["coverage"]
+                         + " because " + turn["coverage_reason"]
+                         + " This is the stored review diagnostic, not an approved brand fact.")
     if route == "rewrite_retrieve":
         try:
             rewritten = RewriteCandidate.model_validate(chat.complete_json(
@@ -214,7 +222,7 @@ def _select(db: Session, *, org_id: UUID, turn_id: UUID, embedder: FollowupEmbed
         query = turn["question"]
     if route == "reuse_evidence":
         passages = reused
-    elif route == "clarify":
+    elif route in {"clarify", "abstain"}:
         passages = []
     else:
         assert query is not None
@@ -347,17 +355,40 @@ def answer_question(db: Session, *, org_id: UUID, turn_id: UUID,
             clarification or "Which claim or finding do you mean?"), []
     elif route == "abstain":
         status, answer, citations = "insufficient_evidence", (
-            "I could not find current approved guidance that answers this question. Please verify it with the brand administrator."), []
+            clarification or "I could not find current approved guidance that answers this question. Please verify it with the brand administrator."), []
+    elif (route == "reuse_evidence" and turn["finding_id"]
+          and asks_for_finding_source(turn["question"]) and passages
+          and isinstance(passages[0].get("cited_excerpt"), str)
+          and passages[0]["cited_excerpt"] in passages[0]["text"]):
+        # A source-identity question can use the already validated finding citation.
+        # Rechecked approval/date/tenant eligibility in _current_finding_evidence
+        # and the exact quote check above keep this independent of model wording.
+        passage = passages[0]
+        raw = {
+            "answer_status": "answered",
+            "answer": (f"This finding cites current approved guidance: {passage['title']} "
+                       f"(version {passage['source_version']}, {passage['source_ref']}). "
+                       f"The source states: “{passage['cited_excerpt']}”")[:900],
+            "evidence": [{"passage_id": str(passage["passage_id"]),
+                          "supporting_quote": passage["cited_excerpt"]}],
+        }
+        validated = validate_answer(raw, current_passages={passage["passage_id"]: passage["text"]})
+        status, answer, citations = (validated.candidate.answer_status,
+                                      validated.candidate.answer, validated.candidate.evidence)
     else:
         finding = None
         if turn["finding_id"]:
             finding = db.execute(text("""
-                SELECT quote,explanation FROM findings WHERE org_id=:org_id AND id=:finding_id
-            """), {"org_id": org_id, "finding_id": turn["finding_id"]}).mappings().first()
+                SELECT quote,explanation,suggested_edit FROM findings
+                WHERE org_id=:org_id AND review_id=:review_id AND id=:finding_id
+            """), {"org_id": org_id, "review_id": turn["review_id"],
+                   "finding_id": turn["finding_id"]}).mappings().first()
         payload = {
             "question": turn["question"], "rewritten_query": query,
             "channel": turn["channel"], "draft_text": turn["content_nfc"][:4000],
-            "finding": dict(finding) if finding else None, "recent_turns": recent,
+            "finding": dict(finding) if finding else None,
+            "review_coverage": {"status": turn["coverage"], "reason": turn["coverage_reason"]},
+            "recent_turns": recent,
             "current_evidence": [{"passage_id": str(p["passage_id"]),
                                   "source_ref": p["source_ref"], "source_version": p["source_version"],
                                   "title": p["title"], "text": p["text"]} for p in passages],

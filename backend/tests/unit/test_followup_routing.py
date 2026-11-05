@@ -2,7 +2,18 @@
 
 import pytest
 
-from app.rag.retrieval.followup import route_followup
+from app.rag.retrieval.followup import asks_about_review_coverage, route_followup
+
+
+@pytest.mark.parametrize("question", [
+    "How it is insufficient",
+    "How is it insufficient?",
+    "Why is evidence coverage insufficient?",
+    "Why was the review partial?",
+])
+def test_review_coverage_question_identified_without_recasting_unrelated_topics(question):
+    assert asks_about_review_coverage(question)
+    assert not asks_about_review_coverage("What is the warranty period?")
 
 
 def test_direct_finding_uses_only_rechecked_current_evidence():

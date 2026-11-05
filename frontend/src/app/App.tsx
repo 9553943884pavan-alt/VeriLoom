@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   Link,
+  NavLink,
   Navigate,
   Outlet,
   Route,
@@ -58,12 +59,52 @@ function RequireSession() {
     </SessionContext.Provider>
   );
 }
+function SignOutButton() {
+  const client = useQueryClient();
+  const navigate = useNavigate();
+  const [error, setError] = useState<unknown>();
+  return (
+    <div className="signout-control">
+      <button
+        type="button"
+        className="signout-button secondary"
+        onClick={async () => {
+          try {
+            await api("/auth/logout", "POST", {});
+            setCsrfToken("");
+            client.clear();
+            navigate("/login");
+          } catch (e) {
+            setError(e);
+          }
+        }}
+      >
+        Sign out
+      </button>
+      <ErrorNotice error={error} />
+    </div>
+  );
+}
 function Organisations() {
   const session = useSession();
   const navigate = useNavigate();
   const client = useQueryClient();
   const orgs = usePages<Organisation>("/organisations");
   return (
+    <>
+    <header className="workspace-topbar standalone-topbar">
+      <Link className="brand" to="/organisations">
+        <span className="brand-mark" aria-hidden="true">◈</span>
+        VeriLoom
+      </Link>
+      <div className="account-actions">
+        <span className="account-avatar" aria-hidden="true">
+          {session.display_name.trim().slice(0, 1).toUpperCase()}
+        </span>
+        <span className="account-identity"><strong>{session.display_name}</strong></span>
+        <SignOutButton />
+      </div>
+    </header>
     <main className="orgs">
       <h1>Your organisations</h1>
       <p>Welcome, {session.display_name}. Choose a workspace to continue.</p>
@@ -126,14 +167,13 @@ function Organisations() {
         </ActionForm>
       </section>
     </main>
+    </>
   );
 }
 function Shell() {
   const { orgId } = useParams();
   const session = useSession();
-  const client = useQueryClient();
   const navigate = useNavigate();
-  const [error, setError] = useState<unknown>();
   const orgs = useQuery({
     queryKey: ["organisations"],
     queryFn: () => api<Page<Organisation>>("/organisations?limit=100"),
@@ -156,14 +196,16 @@ function Shell() {
     );
   return (
     <OrgContext.Provider value={org}>
-      <div className="shell">
-        <aside>
+      <div className="workspace-shell">
+        <header className="workspace-topbar">
           <Link className="brand" to="/organisations">
-            ◈ VeriLoom
+            <span className="brand-mark" aria-hidden="true">◈</span>
+            VeriLoom
           </Link>
-          <p className="eyebrow">Brand review workspace</p>
-          <Field label="Organisation">
+          <div className="workspace-selector">
+            <label htmlFor="workspace-organisation">Organisation</label>
             <select
+              id="workspace-organisation"
               value={orgId}
               onChange={(e) => navigate(`/org/${e.target.value}/overview`)}
             >
@@ -173,47 +215,49 @@ function Shell() {
                 </option>
               ))}
             </select>
-          </Field>
-          <nav aria-label="Workspace">
-            <Link to="overview">Overview</Link>
-            {org.roles.includes("admin") && (
-              <>
-                <Link to="admin/sources">Source library</Link>
-                <Link to="admin/members">People & invitations</Link>
-              </>
-            )}
-            {org.roles.includes("creator") && (
-              <Link to="creator/drafts">My drafts</Link>
-            )}
-            {org.roles.includes("reviewer") && (
-              <Link to="reviewer/inbox">Review inbox</Link>
-            )}
-            <Link to="/organisations">All organisations</Link>
-          </nav>
-          <div className="profile">
-            <strong>{session.display_name}</strong>
-            <small>{org.roles.join(" · ")}</small>
-            <button
-              className="secondary"
-              onClick={async () => {
-                try {
-                  await api("/auth/logout", "POST", {});
-                  setCsrfToken("");
-                  client.clear();
-                  navigate("/login");
-                } catch (e) {
-                  setError(e);
-                }
-              }}
-            >
-              Sign out
-            </button>
-            <ErrorNotice error={error} />
           </div>
-        </aside>
-        <main>
-          <Outlet key={org.org_id} />
-        </main>
+          <div className="account-actions">
+            <span className="account-avatar" aria-hidden="true">
+              {session.display_name.trim().slice(0, 1).toUpperCase()}
+            </span>
+            <span className="account-identity">
+              <strong>{session.display_name}</strong>
+              <small>{org.roles.join(" · ")}</small>
+            </span>
+            <SignOutButton />
+          </div>
+        </header>
+        <div className="workspace-body">
+          <aside className="workspace-sidebar">
+            <nav aria-label="Workspace">
+              <p className="nav-label">Workspace</p>
+              <NavLink to="overview" end>Overview</NavLink>
+              {org.roles.includes("admin") && (
+                <>
+                  <p className="nav-label">Admin</p>
+                  <NavLink to="admin/sources">Source library</NavLink>
+                  <NavLink to="admin/members">People & invitations</NavLink>
+                </>
+              )}
+              {org.roles.includes("creator") && (
+                <>
+                  <p className="nav-label">Create</p>
+                  <NavLink to="creator/drafts">My drafts</NavLink>
+                </>
+              )}
+              {org.roles.includes("reviewer") && (
+                <>
+                  <p className="nav-label">Review</p>
+                  <NavLink to="reviewer/inbox">Review inbox</NavLink>
+                </>
+              )}
+            </nav>
+            <Link className="workspace-all" to="/organisations">All organisations</Link>
+          </aside>
+          <main className="workspace-main">
+            <Outlet key={org.org_id} />
+          </main>
+        </div>
       </div>
     </OrgContext.Provider>
   );
