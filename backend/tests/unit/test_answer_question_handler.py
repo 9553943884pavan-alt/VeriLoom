@@ -113,6 +113,8 @@ def test_followup_snapshots_before_provider_and_publishes_exact_citation(monkeyp
     assert db.commits == 2
     assert any("o.time_zone AS timezone" in sql for sql, _ in db.calls)
     assert next(p for sql, p in db.calls if "INSERT INTO chat_evidence" in sql)["supplied_text"] == "Do not say best."
+    scores = json.loads(next(p for sql, p in db.calls if "INSERT INTO chat_evidence" in sql)["scores"])
+    assert scores["query_planner_version"] == "single_query/1.0.0"
     assert next(p for sql, p in db.calls if "INSERT INTO chat_citations" in sql)["excerpt"] == "Do not say best."
     assert any("state='completed'" in sql for sql, _ in db.calls)
     published = next(p for sql, p in db.calls if "answer_status=:answer_status" in sql)
@@ -171,10 +173,7 @@ def test_new_topic_does_not_reuse_selected_finding_evidence(monkeypatch):
     monkeypatch.setattr(handler, "retrieve_evidence", no_refund_guidance)
     answer_question(db, org_id=ORG, turn_id=TURN, embedder=Embedder(), chat=chat,
                     today=date(2026, 11, 4))
-    assert searches == [
-        "What source confirms the refund policy?",
-        "What approved guidance applies when a factual claim has no authorised supporting evidence?",
-    ]
+    assert searches == ["What source confirms the refund policy?"]
     assert chat.calls == 0
     assert not any("INSERT INTO chat_evidence" in sql for sql, _ in db.calls)
     published = next(p for sql, p in db.calls if "answer_status=:answer_status" in sql)
@@ -203,7 +202,7 @@ def test_followup_purpose_search_keeps_selected_evidence_query_provenance(monkey
     monkeypatch.setattr(handler, "retrieve_evidence", retrieve)
     _, selected, _, route, _, stored_query = _select(
         db, org_id=ORG, turn_id=TURN, embedder=Embedder(), chat=Chat(db),
-        today=date(2026, 11, 4),
+        today=date(2026, 11, 4), purpose_queries=True,
     )
 
     assert route == "fresh_retrieve"

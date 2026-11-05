@@ -20,6 +20,8 @@ The separate `evaluation/retrieval_judgments_dev.jsonl` is a Stage 1 **developme
 
 `backend/scripts/evaluate_stage2_retrieval.py` compares the frozen Stage 1 baseline with separately named development experiments using this same supplement. Its optional fresh-holdout mode requires a new independently authored file and creates an exclusive assessment receipt before ranking; that result is reported once after the implementation is frozen. Neither the development supplement nor a future holdout is ingested as brand guidance.
 
+`evaluation/retrieval_judgments_stage2_holdout.jsonl` is the separate 12-case fresh Stage 2 holdout authored after the candidate pipeline was frozen. Its SHA-256 and one-shot variant list are in `evaluation/stage2_holdout_receipt.json`; the observed results and non-generalising purpose-query outcome are in [the hybrid evaluation report](../Docs/HYBRID_EVALUATION.md). This holdout is now observed and must not be reused for tuning or presented as unseen. Both files sit outside the original seven-file manifest and must never enter ingestion, model prompts or approved guidance.
+
 ## Source material and assets
 
 - `brand_sources/brand_guidelines.md`, `approved_facts.md`, and `terminology.md` are the readable administrator source documents. The knowledge JSONL is the prepared atomic ingestion view of these documents. Do not ingest both into the same index without deduplicating.

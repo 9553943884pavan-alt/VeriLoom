@@ -129,7 +129,8 @@ def _preserves_terms(question: str, rewrite: str) -> bool:
 
 
 def _select(db: Session, *, org_id: UUID, turn_id: UUID, embedder: FollowupEmbedder,
-            chat: AnswerChat, today: date | None) -> tuple[dict[str, Any], list[dict[str, Any]],
+            chat: AnswerChat, today: date | None, purpose_queries: bool = False,
+            ) -> tuple[dict[str, Any], list[dict[str, Any]],
                                                          list[dict[str, str]], str, str | None, str | None]:
     row = db.execute(text("""
         SELECT t.id,t.review_id,t.finding_id,t.question,t.state,t.created_at,
@@ -214,7 +215,7 @@ def _select(db: Session, *, org_id: UUID, turn_id: UUID, embedder: FollowupEmbed
         assert query is not None
         if embedder.count_tokens("query: " + query) > 512:
             raise AnswerFailure("query_token_limit_unusable")
-        queries = augment_queries([query], embedder)
+        queries = augment_queries([query], embedder) if purpose_queries else [query]
         try:
             results_by_query = [retrieve_evidence(
                 db, org_id=org_id, as_of=as_of, query=search_query,
@@ -241,7 +242,8 @@ def _select(db: Session, *, org_id: UUID, turn_id: UUID, embedder: FollowupEmbed
                      "source_version": p.source_version, "title": p.title,
                      "text": p.text, "effective_from": p.effective_from,
                      "retrieval_scores": {"query_count": len(queries),
-                                          "query_planner_version": QUERY_PLANNER_VERSION,
+                                          "query_planner_version": QUERY_PLANNER_VERSION
+                                          if purpose_queries else "single_query/1.0.0",
                                           "uncovered_query_indexes": uncovered_queries,
                                           "query_matches": matches[p.passage_id]}} for p in found]
     current_corpus = db.execute(text("""

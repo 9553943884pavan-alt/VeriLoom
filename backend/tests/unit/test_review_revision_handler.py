@@ -253,12 +253,10 @@ def test_all_queries_execute_before_bounded_selection_and_tail_evidence_is_retai
     assert (compatible_passages, compatible_incomplete) == (selected, incomplete)
 
 
-def test_worker_expands_claim_queries_and_persists_purpose_provenance(monkeypatch):
+def test_opt_in_claim_queries_preserve_purpose_provenance(monkeypatch):
     import app.jobs.handlers.review_revision as handler
 
     draft = "Use code CHAI50 for 50% off until tonight."
-    db = FakeDB(draft)
-    chat = CoverageChat(db)
     purpose_passage = replace(evidence()[0], passage_id=UUID(int=20))
     calls = []
 
@@ -267,20 +265,40 @@ def test_worker_expands_claim_queries_and_persists_purpose_provenance(monkeypatc
         return [purpose_passage] if "promotional offers" in kwargs["query"] else evidence()
 
     monkeypatch.setattr(handler, "retrieve_evidence", retrieve)
-    review_revision(db, org_id=ORG, review_id=REVIEW, embedder=Embedder(), chat=chat,
-                    today=date(2026, 11, 4))
+    selected, scores, incomplete = _retrieve_with_provenance(
+        None, org_id=ORG, corpus_version=7, as_of=date(2026, 11, 4),
+        draft=draft, embedder=Embedder(), purpose_queries=True,
+    )
 
     assert calls[0] == draft
     assert len(calls) == 2
     assert "promotional offers" in calls[1]
-    snapshots = [params for sql, params in db.calls if "INSERT INTO review_evidence" in sql]
-    assert len(snapshots) == 2
-    purpose_scores = json.loads(next(params["scores"] for params in snapshots
-                                     if params["passage_id"] == purpose_passage.passage_id))
+    assert len(selected) == 2 and incomplete is False
+    purpose_scores = scores[purpose_passage.passage_id]
     assert purpose_scores["query_count"] == 2
     assert purpose_scores["query_planner_version"] == "purpose_queries/1.0.0"
     assert purpose_scores["query_matches"][0]["query_index"] == 2
     assert purpose_scores["query_matches"][0]["query_text"] == calls[1]
+
+
+def test_review_worker_keeps_stage1_planning_default_after_holdout(monkeypatch):
+    import app.jobs.handlers.review_revision as handler
+
+    draft = "Use code CHAI50 for 50% off until tonight."
+    db = FakeDB(draft)
+    chat = CoverageChat(db)
+    calls = []
+
+    def retrieve(*args, **kwargs):
+        calls.append(kwargs["query"])
+        return evidence()
+
+    monkeypatch.setattr(handler, "retrieve_evidence", retrieve)
+    review_revision(db, org_id=ORG, review_id=REVIEW, embedder=Embedder(), chat=chat,
+                    today=date(2026, 11, 4))
+    assert calls == [draft]
+    snapshot = next(params for sql, params in db.calls if "INSERT INTO review_evidence" in sql)
+    assert json.loads(snapshot["scores"])["query_planner_version"] == "segment_queries/1.0.0"
     assert chat.user_data["draft_text"] == draft
 
 

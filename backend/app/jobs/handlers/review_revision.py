@@ -268,7 +268,7 @@ def review_revision(db: Session, *, org_id: UUID, review_id: UUID,
         try:
             snapshot, retrieval_scores, retrieval_incomplete = _retrieve_with_provenance(
                 db, org_id=org_id, corpus_version=corpus_version,
-                as_of=as_of, draft=draft, embedder=embedder, purpose_queries=True,
+                as_of=as_of, draft=draft, embedder=embedder,
             )
             latest = db.execute(text("SELECT corpus_version FROM organisations WHERE id=:org_id"),
                                 {"org_id": org_id}).scalar_one()

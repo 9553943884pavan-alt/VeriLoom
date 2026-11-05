@@ -75,7 +75,7 @@ Run the baseline from `backend/` with `.\.venv\Scripts\python.exe -B scripts/eva
 
 ## Stage 2 development comparison, 2026-11-05
 
-The 20 development judgments and 45 eligible synthetic records are unchanged. `backend/scripts/evaluate_stage2_retrieval.py` projects only case input before retrieval, uses the same pinned real E5 model, production hybrid retrieval and simulated exact-cosine SQL, and reads labels only after ranking. The Stage 1 diagnostic entry point remains unaugmented so the prior baseline can still be reproduced. The review worker and fresh/rewrite follow-up searches now use `purpose_queries/1.0.0`: explicit nutrition/dietary, refund/return/warranty, and promotion cues append general governing-evidence questions after the original bounded query or draft segments. At most eight total queries execute; selected evidence retains per-query provenance. Source IDs, labels and approved facts are never inserted into the planner.
+The 20 development judgments and 45 eligible synthetic records are unchanged. `backend/scripts/evaluate_stage2_retrieval.py` projects only case input before retrieval, uses the same pinned real E5 model, production hybrid retrieval and simulated exact-cosine SQL, and reads labels only after ranking. The Stage 1 diagnostic entry point remains unaugmented so the prior baseline can still be reproduced. The tested opt-in `purpose_queries/1.0.0` path uses explicit nutrition/dietary, refund/return/warranty, and promotion cues to append general governing-evidence questions after the original bounded query or draft segments. At most eight total queries execute; selected evidence retains per-query provenance. Source IDs, labels and approved facts are never inserted into the planner. The worker default after the one-shot fresh holdout remains Stage 1; see the release decision below.
 
 | Development metric | Stage 1 | Purpose queries, drafts only | Purpose queries, drafts and follow-ups |
 |---|---:|---:|---:|
@@ -96,4 +96,19 @@ Generic category-cap diversification was rejected: by itself it reached only 21/
 
 An independent disposable PostgreSQL test (`python -B -m tests.integration.live_stage2_ingestion_retrieval` from `backend/`) migrated only a random test database and exercised a real Markdown upload repository, production extraction/chunking/ingestion, pinned E5 vectors stored in pgvector, and production scoped SQL retrieval. It stored 16 passages across eight source-state/tenant variants, verified NFC/LF source spans and token bounds, and excluded pending, future, expired, archived, not-ready, wrong-model and other-tenant passages. Both decomposed-accent and Hindi queries returned only eligible current-tenant passages; category isolation passed. The exact disposable database was dropped and absence confirmed. This check used an in-memory original-object store, not HTTP/R2 or the durable worker. It verifies the stored-vector path and isolation, not deployed latency or generation quality.
 
-The fresh independent holdout is evaluated only after the Stage 2 pipeline is frozen. The one-shot evaluator creates an exclusive receipt before ranking; its result and limits are recorded below after that run.
+## Fresh independently authored holdout and release decision
+
+After freezing the candidate pipeline in commit `97dde3a`, a separate author created 12 new synthetic holdout cases without inspecting development/old-holdout labels, ranking outputs or experiments. The set has nine drafts (two clean, five violating, two unverified) and three explicit follow-up searches, including four Hindi inputs and a 1,626-character draft with its service claim near the end. Schema and current-source references were validated before the one-shot run. The evaluator wrote an exclusive [assessment receipt](../data/evaluation/stage2_holdout_receipt.json) with the file SHA-256 before ranking; the initial sandbox attempt failed to create this receipt and ran no rankings, then the approved local run completed once. The [holdout labels](../data/evaluation/retrieval_judgments_stage2_holdout.jsonl) were not used in runtime queries/prompts or for tuning.
+
+| Fresh holdout metric | Frozen Stage 1 | Frozen purpose-query variant |
+|---|---:|---:|
+| Required groups in candidate union | 14/17 | 14/17 |
+| Required groups in final eight | 14/17 | 13/17 |
+| Final MRR | 0.778 | 0.778 |
+| Final nDCG@8, incomplete judgments | 0.556 | 0.549 |
+| Selected passages explicitly judged nonrelevant | 10 | 10 |
+| Searches across 12 cases | 12 | 13 |
+
+The purpose query recovered no additional candidate groups and displaced the `ordering_service` group from the final eight in long-draft case S2-HO-07. Both variants missed `uncertainty_rule` in S2-HO-08, `nutrition_absence` in S2-HO-09 and `dietary_information` in S2-HO-10. This is a small fictional corpus and incomplete qrel set, but it directly fails to confirm the development improvement. Holdout latency (about 97 ms Stage 1, 59 ms purpose) is not comparable: the Stage 1 variant ran first in the same cold serial process, so those numbers are not evidence of a speed gain. The development latency and Windows process-memory observations above remain the bounded resource evidence.
+
+The release decision is conservative: the worker retains the Stage 1 query plan and final selector by default. The Stage 2 planner, provenance code, ablation scripts and tests remain available as an explicit experiment; no query template, source label, model or ranking parameter was adjusted using the fresh holdout. Disabling the experimental worker path is a release gate, not a holdout-tuned ranking change. This holdout has now been observed and must not be used as an unseen final test for future revisions. A new independently authored set and a worker-sized memory/latency run are needed before enabling purpose queries or a reranker. AI-generated finding quality is still separate and unmeasured here.
