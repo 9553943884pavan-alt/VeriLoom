@@ -1,0 +1,17 @@
+{
+  "status": "frozen_before_scoring",
+  "created_utc": "2026-11-05T07:20:10.013485+00:00",
+  "candidate_commit": "900b334ac589e420ba359349a1b141104fbbd9c6",
+  "candidate_sha256_at_commit": {
+    "backend/app/rag/review_validation.py": "aad0293e110fa845caa4f42cfdeec9f4a86ed61d2e2e8cb0a1650d7206e8804f",
+    "backend/app/rag/evidence_support.py": "9ed00602e03c5a9308bdfe16995cc322169fca6824957e7c221723549f7b5bde",
+    "backend/scripts/evaluate_stage3_findings.py": "ab9f1c9b2b52bce80b939a734421cb17e0cdae71a1d81aab91b98f2444b30e11",
+    "backend/app/jobs/handlers/review_revision.py": "eac81e4016e97a565aedb360e714d56b2ab69ebc2bc8e2cc6381efc55a3bc6ab"
+  },
+  "baseline_commit": "6278953",
+  "dataset_path": "data/evaluation/finding_candidates_stage3_holdout.jsonl",
+  "dataset_sha256": "212b52227b54075fdeaaa21f3a6004bf03d0098cea6c6163f8dbac4c1304d62a",
+  "case_count": 16,
+  "methods": "Independent synthetic model-output replay with author-assigned ground truth; no Stage 3 development or old holdout labels read. Score baseline and opt-in once after freeze.",
+  "limits": "Synthetic validator replay, not live LLM quality. Never ingest labels or tune against this holdout."
+}

@@ -1,0 +1,375 @@
+{
+  "assessment": "frozen_independent_stage3_synthetic_candidate_replay",
+  "dataset_sha256": "212b52227b54075fdeaaa21f3a6004bf03d0098cea6c6163f8dbac4c1304d62a",
+  "candidate_commit": "900b334ac589e420ba359349a1b141104fbbd9c6",
+  "baseline_commit": "6278953",
+  "scoring_command": ".\\backend\\.venv\\Scripts\\python.exe $env:TEMP\\stage3_holdout_score.py",
+  "baseline": {
+    "cases": 16,
+    "true_positive": 9,
+    "false_positive": 5,
+    "false_negative": 2,
+    "precision": 0.6429,
+    "recall": 0.8182,
+    "no_op_edits": 4,
+    "schema_or_validator_rejections": 2,
+    "rejection_kinds": {
+      "H11": "ValidationError",
+      "H12": "ValueError"
+    },
+    "citation_exact_quotes": 14,
+    "citation_count": 14,
+    "semantic_supporting_citations": 8,
+    "citation_support_rate": 0.5714,
+    "evidence_coverage": {
+      "sufficient": 14
+    },
+    "coverage_downgrades": 0,
+    "anchor_validation_errors": 0,
+    "per_case": [
+      {
+        "case_id": "H01",
+        "group": "clean_preferred_term",
+        "false_positives": [
+          [
+            "terminology",
+            "Cardamom Chai"
+          ]
+        ],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "sufficient"
+      },
+      {
+        "case_id": "H02",
+        "group": "true_terminology",
+        "false_positives": [],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "sufficient"
+      },
+      {
+        "case_id": "H03",
+        "group": "true_award",
+        "false_positives": [],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "sufficient"
+      },
+      {
+        "case_id": "H04",
+        "group": "unrelated_citation",
+        "false_positives": [
+          [
+            "tone",
+            "Take a chai break today."
+          ]
+        ],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "sufficient"
+      },
+      {
+        "case_id": "H05",
+        "group": "clean_hindi_unicode",
+        "false_positives": [
+          [
+            "terminology",
+            "Nook & Kettle"
+          ]
+        ],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "sufficient"
+      },
+      {
+        "case_id": "H06",
+        "group": "true_hindi_unicode",
+        "false_positives": [],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "sufficient"
+      },
+      {
+        "case_id": "H07",
+        "group": "long_draft_noop_edit",
+        "false_positives": [],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "sufficient"
+      },
+      {
+        "case_id": "H08",
+        "group": "multiple_claims",
+        "false_positives": [],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "sufficient"
+      },
+      {
+        "case_id": "H09",
+        "group": "clean_availability",
+        "false_positives": [
+          [
+            "factual_claim",
+            "available at our Kothrud and Baner cafés"
+          ]
+        ],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "sufficient"
+      },
+      {
+        "case_id": "H10",
+        "group": "true_service_term",
+        "false_positives": [],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "sufficient"
+      },
+      {
+        "case_id": "H11",
+        "group": "invalid_schema",
+        "false_positives": [],
+        "false_negatives": [
+          [
+            "factual_claim",
+            "vegan"
+          ]
+        ],
+        "rejected": true,
+        "coverage": null
+      },
+      {
+        "case_id": "H12",
+        "group": "inexact_evidence",
+        "false_positives": [],
+        "false_negatives": [
+          [
+            "promotional_claim",
+            "CHAI10"
+          ]
+        ],
+        "rejected": true,
+        "coverage": null
+      },
+      {
+        "case_id": "H13",
+        "group": "true_promotion_noop_edit",
+        "false_positives": [],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "sufficient"
+      },
+      {
+        "case_id": "H14",
+        "group": "clean_no_findings",
+        "false_positives": [],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "sufficient"
+      },
+      {
+        "case_id": "H15",
+        "group": "semantic_false_positive",
+        "false_positives": [
+          [
+            "tone",
+            "Welcome in for a calm cup of chai."
+          ]
+        ],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "sufficient"
+      },
+      {
+        "case_id": "H16",
+        "group": "true_violation_bad_citation",
+        "false_positives": [],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "sufficient"
+      }
+    ]
+  },
+  "stage3_opt_in": {
+    "cases": 16,
+    "true_positive": 8,
+    "false_positive": 1,
+    "false_negative": 3,
+    "precision": 0.8889,
+    "recall": 0.7273,
+    "no_op_edits": 0,
+    "schema_or_validator_rejections": 2,
+    "rejection_kinds": {
+      "H11": "ValidationError",
+      "H12": "ValueError"
+    },
+    "citation_exact_quotes": 9,
+    "citation_count": 9,
+    "semantic_supporting_citations": 8,
+    "citation_support_rate": 0.8889,
+    "evidence_coverage": {
+      "sufficient": 11,
+      "partial": 3
+    },
+    "coverage_downgrades": 3,
+    "anchor_validation_errors": 0,
+    "per_case": [
+      {
+        "case_id": "H01",
+        "group": "clean_preferred_term",
+        "false_positives": [],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "sufficient"
+      },
+      {
+        "case_id": "H02",
+        "group": "true_terminology",
+        "false_positives": [],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "sufficient"
+      },
+      {
+        "case_id": "H03",
+        "group": "true_award",
+        "false_positives": [],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "sufficient"
+      },
+      {
+        "case_id": "H04",
+        "group": "unrelated_citation",
+        "false_positives": [],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "partial"
+      },
+      {
+        "case_id": "H05",
+        "group": "clean_hindi_unicode",
+        "false_positives": [],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "sufficient"
+      },
+      {
+        "case_id": "H06",
+        "group": "true_hindi_unicode",
+        "false_positives": [],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "sufficient"
+      },
+      {
+        "case_id": "H07",
+        "group": "long_draft_noop_edit",
+        "false_positives": [],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "sufficient"
+      },
+      {
+        "case_id": "H08",
+        "group": "multiple_claims",
+        "false_positives": [],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "sufficient"
+      },
+      {
+        "case_id": "H09",
+        "group": "clean_availability",
+        "false_positives": [],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "partial"
+      },
+      {
+        "case_id": "H10",
+        "group": "true_service_term",
+        "false_positives": [],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "sufficient"
+      },
+      {
+        "case_id": "H11",
+        "group": "invalid_schema",
+        "false_positives": [],
+        "false_negatives": [
+          [
+            "factual_claim",
+            "vegan"
+          ]
+        ],
+        "rejected": true,
+        "coverage": null
+      },
+      {
+        "case_id": "H12",
+        "group": "inexact_evidence",
+        "false_positives": [],
+        "false_negatives": [
+          [
+            "promotional_claim",
+            "CHAI10"
+          ]
+        ],
+        "rejected": true,
+        "coverage": null
+      },
+      {
+        "case_id": "H13",
+        "group": "true_promotion_noop_edit",
+        "false_positives": [],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "sufficient"
+      },
+      {
+        "case_id": "H14",
+        "group": "clean_no_findings",
+        "false_positives": [],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "sufficient"
+      },
+      {
+        "case_id": "H15",
+        "group": "semantic_false_positive",
+        "false_positives": [
+          [
+            "tone",
+            "Welcome in for a calm cup of chai."
+          ]
+        ],
+        "false_negatives": [],
+        "rejected": false,
+        "coverage": "sufficient"
+      },
+      {
+        "case_id": "H16",
+        "group": "true_violation_bad_citation",
+        "false_positives": [],
+        "false_negatives": [
+          [
+            "factual_claim",
+            "Delivery to every city"
+          ]
+        ],
+        "rejected": false,
+        "coverage": "partial"
+      }
+    ]
+  },
+  "limitations": [
+    "Authored synthetic candidate replay; does not measure live LLM generation.",
+    "Ground truth is author assigned; semantic citation support is judged at finding level.",
+    "Validation rejects the whole payload for invalid schema or inexact citations.",
+    "Do not tune against this assessed holdout."
+  ]
+}
