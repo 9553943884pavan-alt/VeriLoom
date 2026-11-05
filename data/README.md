@@ -57,5 +57,7 @@ The validator does not run the RAG pipeline, inspect image pixels, verify every 
 
 ## Provenance and hackathon disclosure
 
+`evaluation/ai_quality_regression_result.json` is a separate generated measurement record for the approved-claim/chat prompt fix. It records synthetic development checks, read-only live retrieval checks, prompt hashes, and unsuccessful intermediate attempts. It is not ingestion data, a new holdout, or part of the original fixture manifest. Reproduce it with `backend/scripts/evaluate_quality_regression.py`; its development judgments are never sent to the provider.
+
 The fictional pack and labels were created with significant AI assistance and human review on 2026-11-03; disclose that use and the creation date in the submission. The problem statement says work done before the official build window will not count as judged implementation, even if it is useful planning material. Public records are original short paraphrases with links, not copied full documents or licensed brand assets. A real organisation must supply and approve its own current confidential guidance, facts, and assets.
 

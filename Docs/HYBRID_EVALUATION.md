@@ -161,3 +161,29 @@ The [offline integration seam](../data/evaluation/stage3_disposable_e2e_result.j
 An independent release audit also reproduced a strict-validation regression in the opt-in path: a finding citing a bare preferred-term declaration is discarded before its draft quote is checked. With a quote absent from the immutable draft, the default validator raises `ValueError`; `quality_filter=True` instead returns zero findings with partial coverage. This violates the intended validation ordering even though the worker still calls the default path. A local 10,000-iteration microbenchmark reported about 0.036 ms per default validation and 0.049 ms with the filter; this excludes model, retrieval and database work and cannot establish production latency or memory fit.
 
 **Release decision: KEEP OPT-IN.** The independent holdout lost a genuine finding, live synthetic generation showed no improvement and retained a clean-case false positive, strict anchor validation can be bypassed by a discarded finding, and disposable PostgreSQL end-to-end verification is unavailable. The worker remains on the prior validator and Stage 1 retrieval defaults. Fix validation ordering and the genuine-claim suppression risk using development cases, then use a *new* independent holdout and migrated disposable database before reconsidering default enablement. No production migration, deployment or provider-model change was made.
+
+## Approved-claim and conversational quality regression, 2026-11-05
+
+The prompt-only correction uses `initial_review/2.0.1`, `rewrite_followup/2.0.2`, and `grounded_answer/2.0.3`. It teaches the model to distinguish an issue from compliance, a source's existing approval from a human publication decision, and a chat referent from brand authority. Exact citation/anchor validation, Stage 1 retrieval and disabled Stage 2/3 experimental defaults are unchanged.
+
+| Final executed check | Result | Measurement boundary |
+|---|---|---|
+| 12 synthetic development cases, twice | 24/24 passed; 26 logical Sarvam calls including rewrites | Supplied evidence; mean 1,015.533 ms/case; no retrieval or database |
+| Four synthetic cases with actual retrieval | 4/4 passed; four Sarvam calls | Read-only approved demo corpus; pinned E5 + pgvector + BM25 + RRF; mean retrieval 1,193.644 ms and combined case 2,299.819 ms |
+| Backend regression suite | 312 passed | Offline suite; one existing Starlette/httpx warning |
+| Ruff / dependency consistency | Passed / no conflicts | Ruff `--no-cache`; `pip check` |
+| Temporary local API | Health/readiness/OpenAPI 200; unauthenticated question access 401 | No browser or mutation; stopped after checks; initial separate readiness attempt returned 503 |
+
+The actual-retrieval check produced zero findings for "Our coffee is freshly roasted." and one supported issue for "Our coffee is the best." Its follow-up confirmed the exact approved statement with a source citation, while unknown warranty abstained without citations. The supplied-evidence suite also exercised conflicting rules, misleading historical chat, personal opinion, mixed drafts, unknown facts, a second product and a replacement question resolved through the real rewrite step.
+
+[The sanitized record](../data/evaluation/ai_quality_regression_result.json) preserves final prompt hashes, results and failed intermediate experiments. Earlier attempts scored 16/24, 21/24, 22/24 and 23/24; they exposed status/citation mistakes, contextual ambiguity, an opinion false positive and transport timeouts. Evaluation was corrected to run the real rewrite step for contextual questions. These development attempts are not comparable independent accuracy estimates. No labels were changed and no holdout was read or rerun.
+
+Reproduce the supplied-evidence check from `backend/`:
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.evaluate_quality_regression --live --repeats 2
+```
+
+The optional `--demo-org-id UUID --synthetic-guidance-file PATH` mode performs four cases using real retrieval in a read-only transaction. Use only an approved synthetic organisation and its known guidance; any unexpected passage stops that case before transfer. It never creates a database, migrates schema, writes application records or uploads R2 objects.
+
+These small checks resolve the reproduced approved-claim defect in this development run. They do not prove general finding faithfulness, independent quality, fallback quality, worker persistence or browser behavior under the new prompts. Old persisted outputs are unchanged. Restart the worker and verify a new synthetic submission/follow-up before the hosted demo; broader quality claims still require a fresh independently authored assessment.

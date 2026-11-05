@@ -10,6 +10,8 @@ The [API contract](Product%20specification/API%20Contracts.md) owns HTTP behavio
 
 The 2026-11-05 synthetic browser run completed the Admin source inspection → Creator submit → Reviewer citation/chat/comment/change request → Creator revision/resubmit → Reviewer approval loop. It also exposed two AI quality defects: an explicit approved factual sentence was called unsupported in a follow-up, and the same sentence received a high-severity finding although the finding explanation admitted it was approved. The human reviewer correctly recorded an override. Fix and independently evaluate those defects before describing automated finding or answer quality as reliable. The latest browser run did not re-upload a source; the already-approved Markdown source was inspected and used by the new review.
 
+The subsequent targeted prompt fix passed 24/24 synthetic development checks and 4/4 read-only E5/PostgreSQL/Sarvam checks, including that approved sentence and its follow-up citation. See [the recorded results](../data/evaluation/ai_quality_regression_result.json). These checks did not rerun the worker/browser journey or establish independent accuracy. Restart the worker to load the new templates, then verify a new synthetic submission and follow-up in the hosted smoke test; old stored reviews remain historical outputs.
+
 ## 1. Render database
 
 - The existing demo database reported Alembic revision `007_provider_attribution` on 2026-11-05. Inspect the dashboard and migration version again before any schema change. The current follow-up routing patch requires no migration.

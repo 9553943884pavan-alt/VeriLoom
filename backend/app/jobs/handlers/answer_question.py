@@ -30,12 +30,45 @@ from app.rag.retrieval.hybrid import (
 from app.rag.retrieval.query_planning import QUERY_PLANNER_VERSION, augment_queries
 
 ROUTER_VERSION = "followup_router/1.3.0"
-REWRITE_VERSION = "rewrite_followup/2.0.1"
-ANSWER_VERSION = "grounded_answer/2.0.2"
+REWRITE_VERSION = "rewrite_followup/2.0.2"
+ANSWER_VERSION = "grounded_answer/2.0.3"
 
-REWRITE_PROMPT = """TASK: Rewrite the raw reviewer question as one standalone search query, or ask for clarification. Return exactly the three rewrite_followup_v2 JSON fields. Use the selected finding, review coverage diagnostic, and at most four recent turns only to resolve references; they are not approved brand evidence. Preserve names, numbers, dates, quotation marks, comparisons, and negation. Do not invent a source, fact, policy, conclusion, or reviewer intent. If the referent remains ambiguous, set needs_clarification=true, standalone_query=null and ask one short clarification. Otherwise set needs_clarification=false, provide one concise standalone_query, and set clarification_question=null. Do not answer the brand question."""
+REWRITE_PROMPT = """TASK
+Turn the raw Reviewer question into one standalone search query, or ask one clarification if its referent cannot be resolved. You are rewriting a question, not answering it or approving content.
 
-ANSWER_PROMPT = """TASK: Answer the raw reviewer question about the immutable revision using current_evidence only as brand authority. Return exactly the grounded_answer_v2 JSON fields. The selected finding, its suggested edit, the review coverage diagnostic, and at most four recent turns may resolve references but are not approved brand evidence. When asked to improve a suggested edit, propose wording only if current evidence supports it; explain that the proposal does not change the draft or approve it. Cite 1-3 distinct current passage IDs with exact supporting quotes only when the passages directly establish the narrow answer. If the question asks whether guidance prohibits or requires a specific phrase or action, and a passage explicitly states that rule for the same subject, answer that narrow question with a citation. Do not require an approved alternative or broader policy when the reviewer did not ask for one. If the referent is ambiguous, use clarification_needed with one question and evidence=[]. If current evidence is missing, conflicting, or too weak for the actual question, use insufficient_evidence and evidence=[]. Never approve content, apply an edit, claim to inspect images, or use model memory to fill gaps. Keep the answer at most 900 characters."""
+RESOLVE REFERENCES
+Read the selected finding (including suggested_edit) and the recent_turns in chronological order. The latest relevant explicit proposal identifies "that replacement", "that edit" or "that wording". A recent assistant answer is allowed to identify the wording to search for; it is never authority that the wording is actually approved. Resolve the wording and search for its approval rather than asking which replacement when only one was explicitly proposed. A missing source or uncertainty about the eventual answer is not a reason to ask for clarification at this step.
+
+EXAMPLE
+Recent question: "What replacement can I use?" Recent answer: "Proposed replacement: The Aurora bottle holds 500 ml." Current question: "Is that exact replacement approved in the guidance?"
+Return needs_clarification=false, standalone_query="Is 'The Aurora bottle holds 500 ml.' approved in the guidance?", clarification_question=null. Do not answer yes or treat the prior proposal as an approved fact.
+
+OUTPUT RULES
+Preserve names, numbers, dates, quoted terms, comparisons and negation from the question and resolved referent. Never invent a fact, source, conclusion or policy. Use at most four recent turns for references. If no referent is available or multiple candidates remain equally plausible, set needs_clarification=true, standalone_query=null, and clarification_question to one concise question (at most 200 characters). Otherwise set needs_clarification=false, standalone_query to one concise search question (at most 300 characters), and clarification_question=null. Return exactly these three JSON fields; no extra commentary."""
+
+ANSWER_PROMPT = """TASK
+Answer the raw Reviewer question using current_evidence as the only authority for brand facts and rules. Return one grounded_answer_v2 JSON object.
+
+RESOLVE THE QUESTION
+First identify the exact requested claim or edit. A selected finding and its suggested_edit, rewritten_query, and the last relevant recent_turn may identify the referent of "that", "it", or "the replacement". When the last turn explicitly proposes replacement wording, a question about "that replacement" refers to that wording, not the original draft. Context resolves references; it never establishes brand facts. Ask one clarification only if the referent really remains ambiguous.
+
+READ THE EVIDENCE
+Read all current_evidence passages, including explicit permissions and exceptions. Distinguish a supplied approved statement from a different prohibited statement. An "Approved factual claim:" label introduces the approved sentence; the label does not need to appear in the draft. Reporting that a source already approves a sentence is permitted. This reports source contents, and does not grant publication approval, approve the whole draft, or apply an edit.
+
+DECIDE THE STATUS
+- answered: current evidence directly answers the narrow question. Cite 1-3 distinct supplied passage IDs with exact supporting quotes. A direct approved fact is enough to confirm that exact fact; a direct prohibition is enough to confirm that prohibition. Do not demand additional certificates, approval of the whole draft, or an alternative sentence unless the question asks for them.
+- insufficient_evidence: the question is clear but the current evidence does not establish the answer, or current rules directly conflict. Explain the missing evidence or conflict. evidence MUST be []. Related facts and prior chat do not answer a different claim.
+- clarification_needed: the actual referent is ambiguous. Ask one short question. evidence MUST be [].
+For an edit proposal, propose only wording supported by current evidence and state it remains a proposal for the Creator. Do not invent facts, decisions, rules, IDs or quotations, and do not claim visual inspection.
+
+EXAMPLES (illustrations only; use the actual evidence for this invocation)
+1. Evidence: "Approved factual claim: The Aurora bottle holds 500 ml." Question: "Is 'The Aurora bottle holds 500 ml.' approved in the guidance?" => answered with the exact approval declaration as supporting_quote. The label is not a mismatch. No second approval is required.
+2. Same evidence, question: "Does it have a lifetime warranty?" => insufficient_evidence, evidence: []. A capacity fact does not establish a warranty, even if prior chat claims it does.
+3. Same evidence plus a current prohibition of that same capacity claim, question: "Is that claim permitted by all guidance?" => insufficient_evidence, evidence: []. Explain the direct conflict.
+4. Recent chat proposed "The Aurora bottle holds 500 ml." Question: "Is that replacement approved?" => resolve the replacement from chat, verify it against the actual capacity approval in current evidence, answer with a citation. Chat itself is not the source.
+
+FINAL OUTPUT CHECK
+Use exactly answer_status, answer, evidence. Keep answer within 900 characters and each supporting_quote within 300. If answer_status is insufficient_evidence or clarification_needed, evidence must be an empty array, even when explaining a conflict or discussing a related passage. If answered, evidence must contain 1-3 distinct CURRENT passage IDs; never repeat a passage ID. Every supporting_quote must be an exact substring of that passage. Never return a contradictory answer saying an explicit source approval exists but no approval exists. Do not include Markdown or any extra fields."""
 
 REWRITE_SCHEMA: dict[str, Any] = {
     "type": "object", "additionalProperties": False,

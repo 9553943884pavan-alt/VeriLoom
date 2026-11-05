@@ -1,0 +1,667 @@
+{
+  "recorded_at": "2026-11-05T13:46:11.862330+00:00",
+  "scope": "Targeted synthetic development regression, not independent holdout, production deployment, browser E2E or general accuracy",
+  "prompt_sha256": {
+    "SYSTEM_PROMPT": "d4c4c4a4c110415afc437d18f49e6a7946d9fca56c437b47584a19ab6ff31d4d",
+    "DEVELOPER_PROMPT": "6e22f08c412ed02f9a560e75fb8b3a13680d8bb407d5288868a6a3d2d4fc6ca8",
+    "REWRITE_PROMPT": "ab3684b574a2d9abad57756c197aa95bd979f0cd832b83e87c0173fd4940b8a1",
+    "ANSWER_PROMPT": "57653116cd9ce8a8313375c74486d5f69ceaccb762bfd908326a08352b464523"
+  },
+  "intermediate_experiments": [
+    {
+      "local_experiment": "ai_quality_regression_result.json",
+      "case_runs": 24,
+      "passed": 16,
+      "failed_checks": [
+        {
+          "case_id": "approved_wording",
+          "repeat": 1,
+          "error_type": "ValidationError",
+          "failed_checks": []
+        },
+        {
+          "case_id": "unknown_warranty",
+          "repeat": 1,
+          "error_type": "ValidationError",
+          "failed_checks": []
+        },
+        {
+          "case_id": "conflicting_approval",
+          "repeat": 1,
+          "error_type": "ValidationError",
+          "failed_checks": []
+        },
+        {
+          "case_id": "contextual_approval",
+          "repeat": 1,
+          "error_type": "ValidationError",
+          "failed_checks": []
+        },
+        {
+          "case_id": "real_violation",
+          "repeat": 2,
+          "error_type": "SarvamTransientError",
+          "failed_checks": []
+        },
+        {
+          "case_id": "unknown_warranty",
+          "repeat": 2,
+          "error_type": "ValidationError",
+          "failed_checks": []
+        },
+        {
+          "case_id": "conflicting_approval",
+          "repeat": 2,
+          "error_type": "ValidationError",
+          "failed_checks": []
+        },
+        {
+          "case_id": "contextual_approval",
+          "repeat": 2,
+          "error_type": "ValidationError",
+          "failed_checks": []
+        }
+      ]
+    },
+    {
+      "local_experiment": "ai_quality_regression_structured.json",
+      "case_runs": 24,
+      "passed": 21,
+      "failed_checks": [
+        {
+          "case_id": "mixed_claims",
+          "repeat": 1,
+          "error_type": "SarvamTransientError",
+          "failed_checks": []
+        },
+        {
+          "case_id": "contextual_approval",
+          "repeat": 1,
+          "error_type": null,
+          "failed_checks": [
+            "answer_status",
+            "required_quote"
+          ]
+        },
+        {
+          "case_id": "contextual_approval",
+          "repeat": 2,
+          "error_type": null,
+          "failed_checks": [
+            "required_quote"
+          ]
+        }
+      ]
+    },
+    {
+      "local_experiment": "ai_quality_regression_routed.json",
+      "case_runs": 24,
+      "passed": 22,
+      "failed_checks": [
+        {
+          "case_id": "contextual_approval",
+          "repeat": 1,
+          "error_type": "ValueError",
+          "failed_checks": []
+        },
+        {
+          "case_id": "contextual_approval",
+          "repeat": 2,
+          "error_type": "ValueError",
+          "failed_checks": []
+        }
+      ]
+    },
+    {
+      "local_experiment": "ai_quality_regression_final.json",
+      "case_runs": 24,
+      "passed": 23,
+      "failed_checks": [
+        {
+          "case_id": "opinion",
+          "repeat": 1,
+          "error_type": null,
+          "failed_checks": [
+            "finding_count",
+            "expected_issue"
+          ]
+        }
+      ]
+    }
+  ],
+  "final_supplied_evidence_gate": {
+    "scope": "synthetic development smoke; not independent holdout or accuracy estimate",
+    "initial_review_version": "initial_review/2.0.1",
+    "answer_version": "grounded_answer/2.0.3",
+    "rewrite_version": "rewrite_followup/2.0.2",
+    "retrieval": "supplied synthetic evidence; no database/retrieval exercised",
+    "validator": "production default; Stage 3 filter disabled",
+    "logical_calls": 26,
+    "case_runs": 24,
+    "passed": 24,
+    "all_passed": true,
+    "cases": [
+      {
+        "case_id": "approved_coffee",
+        "repeat": 1,
+        "task": "review",
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "finding_count": true,
+          "expected_issue": true,
+          "anchors": true,
+          "no_identical_edit": true,
+          "truthful_missing_coverage": true
+        },
+        "findings": 0,
+        "coverage": "sufficient",
+        "elapsed_ms": 616.661
+      },
+      {
+        "case_id": "approved_capacity",
+        "repeat": 1,
+        "task": "review",
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "finding_count": true,
+          "expected_issue": true,
+          "anchors": true,
+          "no_identical_edit": true,
+          "truthful_missing_coverage": true
+        },
+        "findings": 0,
+        "coverage": "sufficient",
+        "elapsed_ms": 473.306
+      },
+      {
+        "case_id": "real_violation",
+        "repeat": 1,
+        "task": "review",
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "finding_count": true,
+          "expected_issue": true,
+          "anchors": true,
+          "no_identical_edit": true,
+          "truthful_missing_coverage": true
+        },
+        "findings": 1,
+        "coverage": "sufficient",
+        "elapsed_ms": 1907.495
+      },
+      {
+        "case_id": "mixed_claims",
+        "repeat": 1,
+        "task": "review",
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "finding_count": true,
+          "expected_issue": true,
+          "anchors": true,
+          "no_identical_edit": true,
+          "truthful_missing_coverage": true
+        },
+        "findings": 1,
+        "coverage": "sufficient",
+        "elapsed_ms": 1637.768
+      },
+      {
+        "case_id": "unknown_fact",
+        "repeat": 1,
+        "task": "review",
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "finding_count": true,
+          "expected_issue": true,
+          "anchors": true,
+          "no_identical_edit": true,
+          "truthful_missing_coverage": true
+        },
+        "findings": 1,
+        "coverage": "partial",
+        "elapsed_ms": 1437.038
+      },
+      {
+        "case_id": "opinion",
+        "repeat": 1,
+        "task": "review",
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "finding_count": true,
+          "expected_issue": true,
+          "anchors": true,
+          "no_identical_edit": true,
+          "truthful_missing_coverage": true
+        },
+        "findings": 0,
+        "coverage": "partial",
+        "elapsed_ms": 779.062
+      },
+      {
+        "case_id": "approved_wording",
+        "repeat": 1,
+        "task": "answer",
+        "route": "fresh_retrieve",
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "answer_status": true,
+          "required_quote": true
+        },
+        "answer_status": "answered",
+        "elapsed_ms": 816.9
+      },
+      {
+        "case_id": "approved_other_fact",
+        "repeat": 1,
+        "task": "answer",
+        "route": "fresh_retrieve",
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "answer_status": true,
+          "required_quote": true
+        },
+        "answer_status": "answered",
+        "elapsed_ms": 916.331
+      },
+      {
+        "case_id": "explicit_prohibition",
+        "repeat": 1,
+        "task": "answer",
+        "route": "fresh_retrieve",
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "answer_status": true,
+          "required_quote": true
+        },
+        "answer_status": "answered",
+        "elapsed_ms": 826.36
+      },
+      {
+        "case_id": "unknown_warranty",
+        "repeat": 1,
+        "task": "answer",
+        "route": "fresh_retrieve",
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "answer_status": true,
+          "required_quote": true
+        },
+        "answer_status": "insufficient_evidence",
+        "elapsed_ms": 732.78
+      },
+      {
+        "case_id": "conflicting_approval",
+        "repeat": 1,
+        "task": "answer",
+        "route": "fresh_retrieve",
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "answer_status": true,
+          "required_quote": true
+        },
+        "answer_status": "insufficient_evidence",
+        "elapsed_ms": 965.484
+      },
+      {
+        "case_id": "contextual_approval",
+        "repeat": 1,
+        "task": "answer",
+        "route": "rewrite_retrieve",
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "answer_status": true,
+          "required_quote": true
+        },
+        "answer_status": "answered",
+        "elapsed_ms": 1593.738
+      },
+      {
+        "case_id": "approved_coffee",
+        "repeat": 2,
+        "task": "review",
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "finding_count": true,
+          "expected_issue": true,
+          "anchors": true,
+          "no_identical_edit": true,
+          "truthful_missing_coverage": true
+        },
+        "findings": 0,
+        "coverage": "sufficient",
+        "elapsed_ms": 405.83
+      },
+      {
+        "case_id": "approved_capacity",
+        "repeat": 2,
+        "task": "review",
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "finding_count": true,
+          "expected_issue": true,
+          "anchors": true,
+          "no_identical_edit": true,
+          "truthful_missing_coverage": true
+        },
+        "findings": 0,
+        "coverage": "sufficient",
+        "elapsed_ms": 450.889
+      },
+      {
+        "case_id": "real_violation",
+        "repeat": 2,
+        "task": "review",
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "finding_count": true,
+          "expected_issue": true,
+          "anchors": true,
+          "no_identical_edit": true,
+          "truthful_missing_coverage": true
+        },
+        "findings": 1,
+        "coverage": "sufficient",
+        "elapsed_ms": 1595.99
+      },
+      {
+        "case_id": "mixed_claims",
+        "repeat": 2,
+        "task": "review",
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "finding_count": true,
+          "expected_issue": true,
+          "anchors": true,
+          "no_identical_edit": true,
+          "truthful_missing_coverage": true
+        },
+        "findings": 1,
+        "coverage": "sufficient",
+        "elapsed_ms": 1606.749
+      },
+      {
+        "case_id": "unknown_fact",
+        "repeat": 2,
+        "task": "review",
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "finding_count": true,
+          "expected_issue": true,
+          "anchors": true,
+          "no_identical_edit": true,
+          "truthful_missing_coverage": true
+        },
+        "findings": 1,
+        "coverage": "partial",
+        "elapsed_ms": 1537.173
+      },
+      {
+        "case_id": "opinion",
+        "repeat": 2,
+        "task": "review",
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "finding_count": true,
+          "expected_issue": true,
+          "anchors": true,
+          "no_identical_edit": true,
+          "truthful_missing_coverage": true
+        },
+        "findings": 0,
+        "coverage": "partial",
+        "elapsed_ms": 516.302
+      },
+      {
+        "case_id": "approved_wording",
+        "repeat": 2,
+        "task": "answer",
+        "route": "fresh_retrieve",
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "answer_status": true,
+          "required_quote": true
+        },
+        "answer_status": "answered",
+        "elapsed_ms": 1004.298
+      },
+      {
+        "case_id": "approved_other_fact",
+        "repeat": 2,
+        "task": "answer",
+        "route": "fresh_retrieve",
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "answer_status": true,
+          "required_quote": true
+        },
+        "answer_status": "answered",
+        "elapsed_ms": 742.334
+      },
+      {
+        "case_id": "explicit_prohibition",
+        "repeat": 2,
+        "task": "answer",
+        "route": "fresh_retrieve",
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "answer_status": true,
+          "required_quote": true
+        },
+        "answer_status": "answered",
+        "elapsed_ms": 931.949
+      },
+      {
+        "case_id": "unknown_warranty",
+        "repeat": 2,
+        "task": "answer",
+        "route": "fresh_retrieve",
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "answer_status": true,
+          "required_quote": true
+        },
+        "answer_status": "insufficient_evidence",
+        "elapsed_ms": 509.458
+      },
+      {
+        "case_id": "conflicting_approval",
+        "repeat": 2,
+        "task": "answer",
+        "route": "fresh_retrieve",
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "answer_status": true,
+          "required_quote": true
+        },
+        "answer_status": "insufficient_evidence",
+        "elapsed_ms": 670.631
+      },
+      {
+        "case_id": "contextual_approval",
+        "repeat": 2,
+        "task": "answer",
+        "route": "rewrite_retrieve",
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "answer_status": true,
+          "required_quote": true
+        },
+        "answer_status": "answered",
+        "elapsed_ms": 1698.263
+      }
+    ]
+  },
+  "final_read_only_database_gate": {
+    "scope": "synthetic development smoke; not independent holdout or accuracy estimate",
+    "initial_review_version": "initial_review/2.0.1",
+    "answer_version": "grounded_answer/2.0.3",
+    "rewrite_version": "rewrite_followup/2.0.2",
+    "retrieval": "read-only PostgreSQL / E5 / BM25 / RRF",
+    "validator": "production default; Stage 3 filter disabled",
+    "logical_calls": 4,
+    "case_runs": 4,
+    "passed": 4,
+    "all_passed": true,
+    "cases": [
+      {
+        "case_id": "approved_coffee",
+        "repeat": 1,
+        "task": "review",
+        "retrieval_ms": 1124.408,
+        "retrieved_passages": 1,
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "finding_count": true,
+          "expected_issue": true,
+          "anchors": true,
+          "no_identical_edit": true,
+          "truthful_missing_coverage": true
+        },
+        "findings": 0,
+        "coverage": "sufficient",
+        "elapsed_ms": 1850.38
+      },
+      {
+        "case_id": "real_violation",
+        "repeat": 1,
+        "task": "review",
+        "retrieval_ms": 1158.683,
+        "retrieved_passages": 1,
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "finding_count": true,
+          "expected_issue": true,
+          "anchors": true,
+          "no_identical_edit": true,
+          "truthful_missing_coverage": true
+        },
+        "findings": 1,
+        "coverage": "sufficient",
+        "elapsed_ms": 2691.413
+      },
+      {
+        "case_id": "approved_wording",
+        "repeat": 1,
+        "task": "answer",
+        "route": "fresh_retrieve",
+        "retrieval_ms": 1392.666,
+        "retrieved_passages": 1,
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "answer_status": true,
+          "required_quote": true
+        },
+        "answer_status": "answered",
+        "elapsed_ms": 2679.053
+      },
+      {
+        "case_id": "unknown_warranty",
+        "repeat": 1,
+        "task": "answer",
+        "route": "fresh_retrieve",
+        "retrieval_ms": 1098.818,
+        "retrieved_passages": 1,
+        "provider": "sarvam",
+        "model": "sarvam-105b",
+        "passed": true,
+        "checks": {
+          "answer_status": true,
+          "required_quote": true
+        },
+        "answer_status": "insufficient_evidence",
+        "elapsed_ms": 1978.431
+      }
+    ]
+  },
+  "api_smoke": [
+    {
+      "path": "/healthz",
+      "statuses": [
+        200
+      ],
+      "passed": true
+    },
+    {
+      "path": "/readyz",
+      "statuses": [
+        200
+      ],
+      "passed": true
+    },
+    {
+      "path": "/openapi.json",
+      "statuses": [
+        200
+      ],
+      "passed": true
+    },
+    {
+      "path": "/api/v1/organisations/36a36213-dfe2-4f85-9640-fa6a52dbae03/reviews/00000000-0000-4000-8000-000000000001/questions",
+      "statuses": [
+        401
+      ],
+      "passed": true
+    }
+  ],
+  "limits": [
+    "Prior experiments included validation failures, unwanted opinion findings, contextual-reference failures and 30-second provider timeouts; they are retained as development history, not hidden retries.",
+    "The final supplied-evidence gate ran 12 cases twice (26 logical calls including two rewrites). The final database gate ran four cases once (four logical calls). All recorded final completions used Sarvam sarvam-105b; no fallback was exercised.",
+    "Read-only retrieval used the existing approved synthetic demo organisation, verified each returned passage against the known synthetic guidance, and made no database/storage writes. It does not prove queue processing, persistence or a browser journey under these prompts.",
+    "Existing exact quote/anchor validators and Stage 1 retrieval defaults remain unchanged; Stage 2/3 experiments remain disabled. No holdout was read or rescored.",
+    "One initial local readiness request returned 503; the follow-up local API smoke returned 200 for health/readiness/OpenAPI and 401 for unauthenticated question access."
+  ]
+}
