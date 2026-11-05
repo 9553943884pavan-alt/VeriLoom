@@ -1,0 +1,102 @@
+{
+  "dataset": "three fixed synthetic smoke cases; not independent holdout",
+  "max_logical_completions": 3,
+  "cases": [
+    {
+      "case_id": "direct_violation",
+      "generation_ms": 4131.174,
+      "provider": "sarvam",
+      "model": "sarvam-105b",
+      "baseline": {
+        "accepted": true,
+        "coverage": "sufficient",
+        "findings": 1,
+        "true_positive": 1,
+        "false_positive": 0,
+        "false_negative": 0,
+        "cited_findings": 1,
+        "expected_issue_citations": 1,
+        "exact_anchors": 1,
+        "no_op_edits": 0,
+        "validator_ms": 0.246
+      },
+      "stage3": {
+        "accepted": true,
+        "coverage": "sufficient",
+        "findings": 1,
+        "true_positive": 1,
+        "false_positive": 0,
+        "false_negative": 0,
+        "cited_findings": 1,
+        "expected_issue_citations": 1,
+        "exact_anchors": 1,
+        "no_op_edits": 0,
+        "validator_ms": 0.057
+      }
+    },
+    {
+      "case_id": "compliant_term",
+      "generation_ms": 2922.922,
+      "provider": "sarvam",
+      "model": "sarvam-105b",
+      "baseline": {
+        "accepted": true,
+        "coverage": "partial",
+        "findings": 1,
+        "true_positive": 0,
+        "false_positive": 1,
+        "false_negative": 0,
+        "cited_findings": 1,
+        "expected_issue_citations": 0,
+        "exact_anchors": 1,
+        "no_op_edits": 0,
+        "validator_ms": 0.086
+      },
+      "stage3": {
+        "accepted": true,
+        "coverage": "partial",
+        "findings": 1,
+        "true_positive": 0,
+        "false_positive": 1,
+        "false_negative": 0,
+        "cited_findings": 1,
+        "expected_issue_citations": 0,
+        "exact_anchors": 1,
+        "no_op_edits": 0,
+        "validator_ms": 0.048
+      }
+    },
+    {
+      "case_id": "hindi_claim",
+      "generation_ms": 2818.729,
+      "provider": "sarvam",
+      "model": "sarvam-105b",
+      "baseline": {
+        "accepted": true,
+        "coverage": "sufficient",
+        "findings": 1,
+        "true_positive": 0,
+        "false_positive": 1,
+        "false_negative": 1,
+        "cited_findings": 1,
+        "expected_issue_citations": 0,
+        "exact_anchors": 1,
+        "no_op_edits": 0,
+        "validator_ms": 0.08
+      },
+      "stage3": {
+        "accepted": true,
+        "coverage": "sufficient",
+        "findings": 1,
+        "true_positive": 0,
+        "false_positive": 1,
+        "false_negative": 1,
+        "cited_findings": 1,
+        "expected_issue_citations": 0,
+        "exact_anchors": 1,
+        "no_op_edits": 0,
+        "validator_ms": 0.036
+      }
+    }
+  ]
+}
