@@ -18,3 +18,7 @@ frontend/dist/
 # Downloaded local model weights and editor artifacts.
 .cache/
 .vscode/
+.playwright-cli/
+
+# Local visual design references.
+Frontend-Design-reference-images/
