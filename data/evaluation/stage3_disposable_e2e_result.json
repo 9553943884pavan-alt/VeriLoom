@@ -1,0 +1,38 @@
+{
+  "gate": "stage3_disposable_end_to_end",
+  "status": "blocked_before_database_creation",
+  "observed_at": "2026-11-05",
+  "safety_boundary": {
+    "configured_database": "hosted Render application database",
+    "production_database_accessed": false,
+    "production_database_modified": false,
+    "cloud_resource_created": false,
+    "test_resource_created": false,
+    "cleanup_required": false,
+    "cleanup_verified": "No test database, storage object, or provider request was created by this workstream."
+  },
+  "blockers": [
+    "The configured DATABASE_URL targets the hosted Render application database; the task forbids using it for disposable integration.",
+    "No PostgreSQL server listens on 127.0.0.1:5432; local PostgreSQL server binaries were not found.",
+    "Docker CLI exists but Docker daemon is stopped, so a local pgvector database could not be started."
+  ],
+  "verified_offline": {
+    "focused_tests": "76 passed, 1 pre-existing StarletteDeprecationWarning; synthetic Stage 3 seam plus auth, source lifecycle, validation, review handler, worker, and ingestion suites",
+    "lint": "Ruff passed for the new integration test with cache disabled.",
+    "e5": "Cached intfloat/multilingual-e5-small loaded offline; query vector had 384 dimensions.",
+    "synthetic_stage3_seam": [
+      "Default validator retained both structurally valid candidate findings.",
+      "Opt-in filter retained the supported violation and discarded the finding citing unrelated terminology guidance.",
+      "Coverage changed from sufficient to partial after discard.",
+      "Code-point anchor, citation excerpt, provider/model attribution, and filtered coverage reached the review publish parameters.",
+      "Reviewer GET response exposed one finding and partial coverage; another organisation's review route returned 404 with a mocked repository."
+    ]
+  },
+  "not_verified": [
+    "Migrated disposable PostgreSQL and pgvector storage/retrieval",
+    "Real source passage persistence and immutable spans in PostgreSQL",
+    "Real database tenant isolation",
+    "Live LLM generation, retries, provider failures, and public reviewer response backed by actual SQL"
+  ],
+  "release_gate_conclusion": "This workstream does not satisfy the disposable end-to-end gate. Keep the Stage 3 filter opt-in pending migrated disposable PostgreSQL verification."
+}
