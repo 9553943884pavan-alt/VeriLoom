@@ -32,6 +32,8 @@ _FINDING_SOURCE_QUESTION = re.compile(
     re.I,
 )
 _REFERENCE_ONLY = re.compile(r"^(why|how|what about (that|it)|and (that|it))\??$", re.I)
+_QUOTED_WORDING = re.compile(r"['\u201c][^'\u201d]{2,}['\u201d]")
+_POLICY_CUE = re.compile(r"\b(guidance|policy|rule|approved|allowed|prohibited)\b", re.I)
 _REVIEW_COVERAGE_QUESTION = re.compile(
     r"^(?:(?:why|how)\s+(?:(?:is|was)\s+)?(?:it|this|the review|the coverage|evidence coverage)\s+"
     r"(?:(?:is|was)\s+)?(?:insufficient|partial)"
@@ -79,6 +81,10 @@ def route_followup(
         return FollowupRoute("clarify", "The question has no clear referent.")
     if has_finding and current_finding_evidence and _DIRECT_FINDING.fullmatch(normalized):
         return FollowupRoute("reuse_evidence", "The current finding evidence may answer this direct question.")
+    if _QUOTED_WORDING.search(normalized) and _POLICY_CUE.search(
+        _QUOTED_WORDING.sub("", normalized)
+    ):
+        return FollowupRoute("fresh_retrieve", "The quoted wording and policy question are explicit.")
     if (_DEICTIC.search(normalized) or _REFERENCE_ONLY.fullmatch(normalized)
             or _DIRECT_FINDING.fullmatch(normalized)
             or (has_recent_context and normalized.lower().startswith("what about"))):

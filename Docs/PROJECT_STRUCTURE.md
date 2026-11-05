@@ -51,7 +51,7 @@ VeriLoom/
 │   ├── PDF.md                                     [existing] Round 1 submission source
 │   ├── VeriLoom_Round1_THE_KING.pdf               [existing] Round 1 artifact
 │   ├── IMPLEMENTATION_LOG.md                      [planned] dated build progress and decisions
-│   ├── DEPLOYMENT.md                              [planned] Render, R2, and Vercel setup
+│   ├── DEPLOYMENT.md                              [existing] Render, R2, and Vercel setup
 │   ├── EVALUATION.md                              [planned] actual test results and limitations
 │   └── Product specification/                     [existing] implementation contracts
 │       ├── README.md                              [existing] specification index

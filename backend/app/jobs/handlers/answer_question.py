@@ -29,7 +29,7 @@ from app.rag.retrieval.hybrid import (
 )
 from app.rag.retrieval.query_planning import QUERY_PLANNER_VERSION, augment_queries
 
-ROUTER_VERSION = "followup_router/1.2.0"
+ROUTER_VERSION = "followup_router/1.3.0"
 REWRITE_VERSION = "rewrite_followup/2.0.1"
 ANSWER_VERSION = "grounded_answer/2.0.2"
 

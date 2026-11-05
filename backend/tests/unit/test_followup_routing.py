@@ -43,6 +43,29 @@ def test_contextual_and_new_topic_routes():
 
 
 @pytest.mark.parametrize("question", [
+    "The suggested edit says 'Our coffee is freshly roasted.' Is that exact sentence approved by the guidance?",
+    'Does the policy allow “freshly roasted” in this caption?',
+    "What does approved guidance say about 'refunds' instead?",
+])
+def test_explicit_quoted_policy_question_searches_without_unnecessary_rewrite(question):
+    assert route_followup(
+        question, has_finding=True, current_finding_evidence=True,
+        has_recent_context=True,
+    ).route == "fresh_retrieve"
+    assert route_followup(
+        question, has_finding=False, current_finding_evidence=False,
+        has_recent_context=False,
+    ).route == "fresh_retrieve"
+
+
+def test_policy_word_inside_quote_does_not_make_contextual_question_standalone():
+    assert route_followup(
+        "What did they mean by 'approved'?", has_finding=False,
+        current_finding_evidence=False, has_recent_context=True,
+    ).route == "rewrite_retrieve"
+
+
+@pytest.mark.parametrize("question", [
     "Explain the approved warranty period.",
     "What source confirms the refund policy?",
     "What evidence supports the Sunday opening hours?",
