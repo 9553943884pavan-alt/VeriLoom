@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, datetime, timezone
+import json
 from uuid import UUID
 
 import pytest
 
-from app.jobs.handlers.answer_question import AnswerFailure, _preserves_terms, answer_question
+from app.jobs.handlers.answer_question import AnswerFailure, _preserves_terms, _select, answer_question
 from app.rag.retrieval.fusion import FusedCandidate
 from app.rag.retrieval.hybrid import EvidencePassage
 
@@ -169,12 +171,53 @@ def test_new_topic_does_not_reuse_selected_finding_evidence(monkeypatch):
     monkeypatch.setattr(handler, "retrieve_evidence", no_refund_guidance)
     answer_question(db, org_id=ORG, turn_id=TURN, embedder=Embedder(), chat=chat,
                     today=date(2026, 11, 4))
-    assert searches == ["What source confirms the refund policy?"]
+    assert searches == [
+        "What source confirms the refund policy?",
+        "What approved guidance applies when a factual claim has no authorised supporting evidence?",
+    ]
     assert chat.calls == 0
     assert not any("INSERT INTO chat_evidence" in sql for sql, _ in db.calls)
     published = next(p for sql, p in db.calls if "answer_status=:answer_status" in sql)
     assert published["route"] == "abstain"
     assert published["answer_status"] == "insufficient_evidence"
+
+
+def test_followup_purpose_search_keeps_selected_evidence_query_provenance(monkeypatch):
+    import app.jobs.handlers.answer_question as handler
+
+    class RefundDB(FakeDB):
+        def execute(self, statement, params):
+            result = super().execute(statement, params)
+            if "SELECT t.id,t.review_id" in str(statement):
+                result.row["question"] = "What is the refund policy?"
+            return result
+
+    db = RefundDB()
+    purpose_passage = replace(evidence()[0], passage_id=UUID(int=20))
+    searches = []
+
+    def retrieve(_db, **kwargs):
+        searches.append(kwargs["query"])
+        return [purpose_passage] if "authorised supporting evidence" in kwargs["query"] else evidence()
+
+    monkeypatch.setattr(handler, "retrieve_evidence", retrieve)
+    _, selected, _, route, _, stored_query = _select(
+        db, org_id=ORG, turn_id=TURN, embedder=Embedder(), chat=Chat(db),
+        today=date(2026, 11, 4),
+    )
+
+    assert route == "fresh_retrieve"
+    assert stored_query == searches[0] == "What is the refund policy?"
+    assert len(searches) == 2
+    assert [item["passage_id"] for item in selected] == [PASSAGE, purpose_passage.passage_id]
+    snapshots = [params for sql, params in db.calls if "INSERT INTO chat_evidence" in sql]
+    purpose_scores = json.loads(next(params["scores"] for params in snapshots
+                                     if params["passage_id"] == purpose_passage.passage_id))
+    assert purpose_scores["query_count"] == 2
+    assert purpose_scores["query_planner_version"] == "purpose_queries/1.0.0"
+    assert purpose_scores["uncovered_query_indexes"] == []
+    assert purpose_scores["query_matches"][0]["query_index"] == 2
+    assert purpose_scores["query_matches"][0]["query_text"] == searches[1]
 
 
 def test_inexact_citation_rejected_before_publication(monkeypatch):

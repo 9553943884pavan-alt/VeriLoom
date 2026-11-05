@@ -253,6 +253,37 @@ def test_all_queries_execute_before_bounded_selection_and_tail_evidence_is_retai
     assert (compatible_passages, compatible_incomplete) == (selected, incomplete)
 
 
+def test_worker_expands_claim_queries_and_persists_purpose_provenance(monkeypatch):
+    import app.jobs.handlers.review_revision as handler
+
+    draft = "Use code CHAI50 for 50% off until tonight."
+    db = FakeDB(draft)
+    chat = CoverageChat(db)
+    purpose_passage = replace(evidence()[0], passage_id=UUID(int=20))
+    calls = []
+
+    def retrieve(*args, **kwargs):
+        calls.append(kwargs["query"])
+        return [purpose_passage] if "promotional offers" in kwargs["query"] else evidence()
+
+    monkeypatch.setattr(handler, "retrieve_evidence", retrieve)
+    review_revision(db, org_id=ORG, review_id=REVIEW, embedder=Embedder(), chat=chat,
+                    today=date(2026, 11, 4))
+
+    assert calls[0] == draft
+    assert len(calls) == 2
+    assert "promotional offers" in calls[1]
+    snapshots = [params for sql, params in db.calls if "INSERT INTO review_evidence" in sql]
+    assert len(snapshots) == 2
+    purpose_scores = json.loads(next(params["scores"] for params in snapshots
+                                     if params["passage_id"] == purpose_passage.passage_id))
+    assert purpose_scores["query_count"] == 2
+    assert purpose_scores["query_planner_version"] == "purpose_queries/1.0.0"
+    assert purpose_scores["query_matches"][0]["query_index"] == 2
+    assert purpose_scores["query_matches"][0]["query_text"] == calls[1]
+    assert chat.user_data["draft_text"] == draft
+
+
 class CoverageChat:
     model = "offline-model"
 

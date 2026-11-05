@@ -18,6 +18,8 @@ Prepared 2026-11-03 for a fictional Nook & Kettle café demo. All Nook & Kettle 
 
 The separate `evaluation/retrieval_judgments_dev.jsonl` is a Stage 1 **development-only supplement** with 20 authored search inputs. It gives independent graded passage relevance, alternative required evidence groups, and finding-correctness labels for clean, violating, missing-fact, Unicode, and explicit follow-up search cases. It is intentionally outside the original seven-file `manifest.json` and generic `validate_data.py` pack contract; `backend/scripts/evaluate_stage1_retrieval.py` validates its versioned record shape, source IDs, and split before scoring. Ingest only `knowledge/records.jsonl`; never send this supplement, its labels, or any answer key to the model or approved-source index. Existing holdout files and labels are unchanged.
 
+`backend/scripts/evaluate_stage2_retrieval.py` compares the frozen Stage 1 baseline with separately named development experiments using this same supplement. Its optional fresh-holdout mode requires a new independently authored file and creates an exclusive assessment receipt before ranking; that result is reported once after the implementation is frozen. Neither the development supplement nor a future holdout is ingested as brand guidance.
+
 ## Source material and assets
 
 - `brand_sources/brand_guidelines.md`, `approved_facts.md`, and `terminology.md` are the readable administrator source documents. The knowledge JSONL is the prepared atomic ingestion view of these documents. Do not ingest both into the same index without deduplicating.

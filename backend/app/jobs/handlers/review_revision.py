@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.integrations.failover import SarvamFirstChat, build_worker_chat, completed_provenance
 from app.integrations.openai_compatible import OpenAICompatibleError
 from app.integrations.sarvam import SarvamChat
+from app.rag.retrieval.evidence_selection import select_interleaved
 from app.rag.retrieval.hybrid import (
     CorpusChanged,
     EvidencePassage,
@@ -24,6 +25,7 @@ from app.rag.retrieval.hybrid import (
     query_within_bounds,
     retrieve_evidence,
 )
+from app.rag.retrieval.query_planning import QUERY_PLANNER_VERSION, augment_queries
 from app.rag.review_validation import ValidatedReview, validate_review
 
 PROMPT_VERSION = "initial_review/2.0.0"
@@ -193,26 +195,19 @@ def _retrieve(db: Session, *, org_id: UUID, corpus_version: int, as_of: date,
 
 
 def _retrieve_with_provenance(db: Session, *, org_id: UUID, corpus_version: int, as_of: date,
-              draft: str, embedder: QueryEmbedder
+              draft: str, embedder: QueryEmbedder, purpose_queries: bool = False,
               ) -> tuple[list[EvidencePassage], dict[UUID, dict[str, Any]], bool]:
     queries, query_truncated = _queries(draft, embedder)
+    if purpose_queries:
+        queries = augment_queries(queries, embedder, max_queries=MAX_QUERIES)
     # Finish the bounded search plan before spending the shared evidence budget.
     results_by_query = [retrieve_evidence(
         db, org_id=org_id, as_of=as_of, query=query, category=None,
         corpus_version=corpus_version, embedder=embedder, top_k=MAX_PASSAGES,
     ) for query in queries]
-    selected: dict[UUID, EvidencePassage] = {}
-    # Reserve each segment's leading evidence, then fill in existing rank order.
-    # A full first result list must not crowd later draft segments out entirely.
-    for result_index in range(MAX_PASSAGES):
-        for results in results_by_query:
-            if result_index < len(results):
-                passage = results[result_index]
-                selected.setdefault(passage.passage_id, passage)
-            if len(selected) >= MAX_PASSAGES:
-                break
-        if len(selected) >= MAX_PASSAGES:
-            break
+    # Preserve Stage 1 selection order. Every bounded search executes first.
+    selected = {passage.passage_id: passage for passage in
+                select_interleaved(results_by_query, limit=MAX_PASSAGES)}
 
     matches: dict[UUID, list[dict[str, Any]]] = {passage_id: [] for passage_id in selected}
     uncovered_queries: list[int] = []
@@ -231,6 +226,7 @@ def _retrieve_with_provenance(db: Session, *, org_id: UUID, corpus_version: int,
             "rrf_score": passage.fusion.score, "dense_rank": passage.fusion.dense_rank,
             "lexical_rank": passage.fusion.lexical_rank, "query_matches": matches[passage_id],
             "query_count": len(queries), "query_truncated": query_truncated,
+            "query_planner_version": QUERY_PLANNER_VERSION if purpose_queries else "segment_queries/1.0.0",
             "uncovered_query_indexes": uncovered_queries,
         }
         for passage_id, passage in selected.items()
@@ -272,7 +268,7 @@ def review_revision(db: Session, *, org_id: UUID, review_id: UUID,
         try:
             snapshot, retrieval_scores, retrieval_incomplete = _retrieve_with_provenance(
                 db, org_id=org_id, corpus_version=corpus_version,
-                as_of=as_of, draft=draft, embedder=embedder,
+                as_of=as_of, draft=draft, embedder=embedder, purpose_queries=True,
             )
             latest = db.execute(text("SELECT corpus_version FROM organisations WHERE id=:org_id"),
                                 {"org_id": org_id}).scalar_one()

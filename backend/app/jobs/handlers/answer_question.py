@@ -19,8 +19,10 @@ from app.integrations.openai_compatible import OpenAICompatibleError
 from app.integrations.sarvam import SarvamChat, SarvamError
 from app.jobs.handlers.review_revision import SYSTEM_PROMPT
 from app.rag.answer_validation import RewriteCandidate, validate_answer
+from app.rag.retrieval.evidence_selection import select_interleaved
 from app.rag.retrieval.followup import route_followup
 from app.rag.retrieval.hybrid import CorpusChanged, retrieve_evidence
+from app.rag.retrieval.query_planning import QUERY_PLANNER_VERSION, augment_queries
 
 ROUTER_VERSION = "followup_router/1.1.0"
 REWRITE_VERSION = "rewrite_followup/2.0.0"
@@ -212,16 +214,36 @@ def _select(db: Session, *, org_id: UUID, turn_id: UUID, embedder: FollowupEmbed
         assert query is not None
         if embedder.count_tokens("query: " + query) > 512:
             raise AnswerFailure("query_token_limit_unusable")
+        queries = augment_queries([query], embedder)
         try:
-            found = retrieve_evidence(db, org_id=org_id, as_of=as_of, query=query,
-                                      category=None, corpus_version=turn["corpus_version"],
-                                      embedder=embedder, top_k=8)
+            results_by_query = [retrieve_evidence(
+                db, org_id=org_id, as_of=as_of, query=search_query,
+                category=None, corpus_version=turn["corpus_version"],
+                embedder=embedder, top_k=8,
+            ) for search_query in queries]
         except CorpusChanged as exc:
             raise AnswerFailure("corpus_changed", retryable=True) from exc
+        found = select_interleaved(results_by_query, limit=8)
+        matches: dict[UUID, list[dict[str, Any]]] = {p.passage_id: [] for p in found}
+        uncovered_queries = [index for index, results in enumerate(results_by_query, 1)
+                             if not any(p.passage_id in matches for p in results)]
+        for query_index, (search_query, results) in enumerate(zip(queries, results_by_query), 1):
+            for result_rank, passage in enumerate(results, 1):
+                if passage.passage_id in matches:
+                    matches[passage.passage_id].append({
+                        "query_index": query_index, "query_text": search_query,
+                        "result_rank": result_rank, "rrf_score": passage.fusion.score,
+                        "dense_rank": passage.fusion.dense_rank,
+                        "lexical_rank": passage.fusion.lexical_rank,
+                    })
         passages = [{"passage_id": p.passage_id, "source_ref": p.source_ref,
                      "source_id": p.source_id, "version_id": p.version_id,
                      "source_version": p.source_version, "title": p.title,
-                     "text": p.text, "effective_from": p.effective_from} for p in found]
+                     "text": p.text, "effective_from": p.effective_from,
+                     "retrieval_scores": {"query_count": len(queries),
+                                          "query_planner_version": QUERY_PLANNER_VERSION,
+                                          "uncovered_query_indexes": uncovered_queries,
+                                          "query_matches": matches[p.passage_id]}} for p in found]
     current_corpus = db.execute(text("""
         SELECT corpus_version FROM organisations WHERE id=:org_id
     """), {"org_id": org_id}).scalar_one()
@@ -234,11 +256,13 @@ def _select(db: Session, *, org_id: UUID, turn_id: UUID, embedder: FollowupEmbed
                {"org_id": org_id, "turn_id": turn_id})
     for rank, passage in enumerate(passages, 1):
         db.execute(text("""
-            INSERT INTO chat_evidence(org_id,turn_id,passage_id,rank,supplied_text,source_version)
-            VALUES (:org_id,:turn_id,:passage_id,:rank,:supplied_text,:source_version)
+            INSERT INTO chat_evidence(org_id,turn_id,passage_id,rank,supplied_text,source_version,retrieval_scores)
+            VALUES (:org_id,:turn_id,:passage_id,:rank,:supplied_text,:source_version,CAST(:scores AS jsonb))
         """), {"org_id": org_id, "turn_id": turn_id, "passage_id": passage["passage_id"],
                "rank": rank, "supplied_text": passage["text"],
-               "source_version": passage["source_version"]})
+               "source_version": passage["source_version"],
+               "scores": json.dumps(passage["retrieval_scores"])
+               if "retrieval_scores" in passage else None})
     db.execute(text("""
         UPDATE chat_turns SET state='processing',route=:route,rewritten_query=:query,
           reviewed_against_corpus_version=:corpus_version,evidence_as_of_date=:as_of,

@@ -72,3 +72,28 @@ All 20 planned queries were searched and no case was marked incomplete. Four exp
 An independent reproduction yielded the same group counts and 20/20 search count. Its mean/median/p95-nearest-rank retrieval times were 43.879/42.951/49.670 ms; model load took 12.612 seconds and corpus embedding 1.113 seconds separately. These local serial timings exclude PostgreSQL/network, ingestion, worker and provider work. A previous run of the same cases measured 60.793 ms mean, illustrating timing variability. A separate disposable PostgreSQL parity test still matched the real pgvector and local exact-cosine rankings for NK-16 (45 synthetic CTE passages, 20 dense and seven lexical candidates); its exact test database was dropped and absence confirmed. It does not test stored production vectors, real organisation data or a deployed worker.
 
 Run the baseline from `backend/` with `.\.venv\Scripts\python.exe -B scripts/evaluate_stage1_retrieval.py`. The Stage 1 fixes preserve the E5 model, 20/20 candidate limits, RRF settings and final top-eight limit. The original holdout scores above are historical observations; they were not used to tune these fixes or the new development labels.
+
+## Stage 2 development comparison, 2026-11-05
+
+The 20 development judgments and 45 eligible synthetic records are unchanged. `backend/scripts/evaluate_stage2_retrieval.py` projects only case input before retrieval, uses the same pinned real E5 model, production hybrid retrieval and simulated exact-cosine SQL, and reads labels only after ranking. The Stage 1 diagnostic entry point remains unaugmented so the prior baseline can still be reproduced. The review worker and fresh/rewrite follow-up searches now use `purpose_queries/1.0.0`: explicit nutrition/dietary, refund/return/warranty, and promotion cues append general governing-evidence questions after the original bounded query or draft segments. At most eight total queries execute; selected evidence retains per-query provenance. Source IDs, labels and approved facts are never inserted into the planner.
+
+| Development metric | Stage 1 | Purpose queries, drafts only | Purpose queries, drafts and follow-ups |
+|---|---:|---:|---:|
+| Dense top-eight required groups | 21/25 | 23/25 | 25/25 |
+| BM25 top-eight required groups | 20/25 | 23/25 | 25/25 |
+| RRF candidate union required groups | 23/25 | 24/25 | 25/25 |
+| Final selected eight required groups | 20/25 | 23/25 | 25/25 |
+| Final MRR | 0.850 | 0.900 | 0.925 |
+| Final nDCG@8, incomplete judgments | 0.658 | 0.737 | 0.790 |
+| Selected passages explicitly judged nonrelevant | 19 | 18 | 17 |
+| Searches across 20 cases | 20 | 24 | 26 |
+
+All five previously missed available groups were present in the final eight on this development run: ST1-DEV-11 nutrition absence, 13 refund uncertainty, 14 caffeine/nutrition absence, 17 promotion approval, and 18 refund uncertainty. The four groups marked unavailable remain excluded from the 25-group denominator; retrieving a related rule does not establish an unavailable calorie, caffeine or refund fact. All bounded planned queries executed, including a separate seven-segment long-draft probe and a Unicode probe. The original draft/offsets and existing tenant, approval, effective-date and model filters were not changed.
+
+The observed warm serial mean retrieval time in one local exact-cosine run was 38.5 ms for Stage 1 and 55.0 ms for the selected purpose-query variant; a separate run measured 40.9 and 55.6 ms. These small samples exclude PostgreSQL network, worker scheduling, generation and provider time. A Windows process working-set experiment measured about 79 MB before model loading and about 807 MB after pinned E5 loading plus 45 corpus embeddings; about 760 MB remained after the runs. This is process memory, not a measured Render worker peak. The optional pinned BGE reranker cache occupies 2.29 GB on disk; its RAM and latency were not measured, so it remains disabled.
+
+Generic category-cap diversification was rejected: by itself it reached only 21/25 final groups with lower nDCG than Stage 1; combined with purpose queries it fell to 24/25 and lower MRR/nDCG than purpose queries alone. The final selection remains the Stage 1 rank-wise interleaving and the per-query RRF, candidate limits, E5 model/revision, and final-eight cap are unchanged. The development labels have incomplete relevance judgments, so the smaller judged-negative count is an observation, not proof of zero irrelevant evidence. No production deployment or provider-based finding-quality evaluation is claimed.
+
+An independent disposable PostgreSQL test (`python -B -m tests.integration.live_stage2_ingestion_retrieval` from `backend/`) migrated only a random test database and exercised a real Markdown upload repository, production extraction/chunking/ingestion, pinned E5 vectors stored in pgvector, and production scoped SQL retrieval. It stored 16 passages across eight source-state/tenant variants, verified NFC/LF source spans and token bounds, and excluded pending, future, expired, archived, not-ready, wrong-model and other-tenant passages. Both decomposed-accent and Hindi queries returned only eligible current-tenant passages; category isolation passed. The exact disposable database was dropped and absence confirmed. This check used an in-memory original-object store, not HTTP/R2 or the durable worker. It verifies the stored-vector path and isolation, not deployed latency or generation quality.
+
+The fresh independent holdout is evaluated only after the Stage 2 pipeline is frozen. The one-shot evaluator creates an exclusive receipt before ranking; its result and limits are recorded below after that run.

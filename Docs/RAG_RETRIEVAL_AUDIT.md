@@ -1,6 +1,6 @@
 # Retrieval quality audit and improvement plan
 
-Date: 2026-11-05. Scope: the pre-fix code, synthetic data, development-only experiments, primary-source research and live pgvector parity. Three agents independently reviewed code, data and research. This records the original defects and measurements. The Stage 1 code fixes and new development baseline are recorded in [HYBRID_EVALUATION.md](HYBRID_EVALUATION.md) and [IMPLEMENTATION_LOG.md](IMPLEMENTATION_LOG.md); no deployment is claimed here.
+Date: 2026-11-05. Scope: the pre-fix code, synthetic data, development-only experiments, primary-source research and live pgvector parity. Three agents independently reviewed code, data and research. This records the original defects and measurements. Stage 1 and Stage 2 implementation results are recorded in [HYBRID_EVALUATION.md](HYBRID_EVALUATION.md) and [IMPLEMENTATION_LOG.md](IMPLEMENTATION_LOG.md); no deployment is claimed here.
 
 ## 1. Findings in plain language
 
