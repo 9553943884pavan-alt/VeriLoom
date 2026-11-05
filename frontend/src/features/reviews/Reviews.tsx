@@ -235,6 +235,12 @@ export function ReviewWorkspace({
           <div className="columns">
             <section>
               <h3>Reviewer follow-up</h3>
+              {r.state === "approved" && (
+                <p>This revision is approved and read-only. Ask new AI questions on a review that is ready for review, before making a decision.</p>
+              )}
+              {r.state === "changes_requested" && (
+                <p>Questions are closed for this revision. Ask follow-ups after the Creator submits the next revision and its review is ready.</p>
+              )}
               <ErrorNotice error={questions.error} />
               {questions.data?.pages
                 .flatMap((p) => p.items)
