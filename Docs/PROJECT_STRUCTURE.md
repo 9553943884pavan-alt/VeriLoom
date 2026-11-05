@@ -23,7 +23,10 @@ Small related screens are deliberately grouped within feature modules, following
 | `frontend/src/style.css` | Tailwind import and responsive visual styles. |
 | `frontend/{package.json,package-lock.json,tsconfig.json,vite.config.ts,eslint.config.js,index.html}` | Pinned frontend toolchain and Vite API proxy. |
 | `backend/scripts/evaluate_hybrid_mvp.py`, `Docs/HYBRID_EVALUATION.md` | Reproducible E5 hybrid evaluation with explicit SQL simulation and optional bounded synthetic generation. |
+| `backend/scripts/diagnose_retrieval.py`, `Docs/RAG_RETRIEVAL_AUDIT.md` | Provider-free retrieval traces, code/data audit findings, primary research and bounded improvement experiments; separate measured facts from proposals. |
+| `data/evaluation/retrieval_judgments_dev.jsonl`, `backend/scripts/evaluate_stage1_retrieval.py`, `backend/tests/unit/test_evaluate_stage1_retrieval.py` | Separate development-only passage relevance, required evidence groups, finding labels and a deterministic hybrid retrieval baseline; never ingest evaluation labels. |
 | `backend/tests/integration/live_source_sql_smoke.py` | Disposable database checks for migrations 006/007, source lifecycle/evidence and provider provenance. |
+| `backend/tests/integration/live_retrieval_sql_smoke.py` | Read-only production retrieval SQL over synthetic CTE relations: real pgvector versus local cosine, with optional create/drop of a separate disposable database; no application records or schema changes. |
 | `backend/tests/unit/test_review_decision_read.py` | Participant access, nullable human decision summary and decision query scope. |
 
 `[existing]` means the file is already in the workspace. `[planned]` means it belongs to the implementation plan; every child of a planned directory is also planned. Unmarked children of an existing directory already exist unless labelled otherwise. Descriptive Alembic revision names below may gain generated revision IDs.

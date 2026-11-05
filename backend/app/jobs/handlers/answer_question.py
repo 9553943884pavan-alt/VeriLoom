@@ -22,7 +22,7 @@ from app.rag.answer_validation import RewriteCandidate, validate_answer
 from app.rag.retrieval.followup import route_followup
 from app.rag.retrieval.hybrid import CorpusChanged, retrieve_evidence
 
-ROUTER_VERSION = "followup_router/1.0.0"
+ROUTER_VERSION = "followup_router/1.1.0"
 REWRITE_VERSION = "rewrite_followup/2.0.0"
 ANSWER_VERSION = "grounded_answer/2.0.1"
 

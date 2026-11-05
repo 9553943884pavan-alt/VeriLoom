@@ -5,7 +5,12 @@ from uuid import UUID
 
 import pytest
 
-from app.rag.retrieval.hybrid import CorpusChanged, retrieve_evidence, tokenize
+from app.rag.retrieval.hybrid import (
+    CorpusChanged,
+    normalize_search_query,
+    retrieve_evidence,
+    tokenize,
+)
 
 
 ORG = UUID("11111111-1111-4111-8111-111111111111")
@@ -43,6 +48,9 @@ class Db:
 
 class Embedder:
     model_id = "intfloat/multilingual-e5-small@test"
+
+    def count_tokens(self, full_input):
+        return len(full_input.split())
 
     def embed_query(self, query):
         assert query == "Nook 2-year warranty"
@@ -95,3 +103,78 @@ def test_empty_scope_and_unicode_tokens():
         category=None, corpus_version=0, embedder=Embedder(),
     ) == []
     assert tokenize("नमस्ते Nook-2 Warranty") == ["नमस्ते", "nook", "2", "warranty"]
+
+
+class RecordingEmbedder(Embedder):
+    def __init__(self, token_count=None):
+        self.token_count = token_count
+        self.counted = []
+        self.embedded = []
+
+    def count_tokens(self, full_input):
+        self.counted.append(full_input)
+        return self.token_count if self.token_count is not None else super().count_tokens(full_input)
+
+    def embed_query(self, query):
+        self.embedded.append(query)
+        return [0.01] * 384
+
+
+@pytest.mark.parametrize("query", [
+    " " * 4100 + "Nook 2-year warranty",
+    "\tNook" + "\u2003" * 4100 + "2-year\n warranty \r\n",
+])
+def test_query_whitespace_is_normalized_before_both_bounds(query):
+    embedder = RecordingEmbedder()
+    db = Db([row(1, "Nook warranty lasts 2 years")])
+    retrieve_evidence(
+        db, org_id=ORG, as_of=date(2026, 11, 4), query=query,
+        category=None, corpus_version=3, embedder=embedder,
+    )
+    assert embedder.counted == ["query: Nook 2-year warranty"]
+    assert embedder.embedded == ["Nook 2-year warranty"]
+
+
+@pytest.mark.parametrize(("query", "token_count", "accepted"), [
+    ("x" * 4000, 512, True),
+    ("x" * 4001, 512, False),
+    ("x", 512, True),
+    ("x", 513, False),
+    ("word " * 511, None, True),
+    ("word " * 512, None, False),
+    (" \t\n\u2003", None, False),
+    (None, None, False),
+])
+def test_retrieval_query_bounds_precede_database_and_embedding(query, token_count, accepted):
+    embedder = RecordingEmbedder(token_count)
+    db = Db([])
+    arguments = dict(
+        org_id=ORG, as_of=date(2026, 11, 4), query=query,
+        category=None, corpus_version=3, embedder=embedder,
+    )
+    if accepted:
+        assert retrieve_evidence(db, **arguments) == []
+        assert embedder.embedded == [normalize_search_query(query)]
+    else:
+        with pytest.raises(ValueError, match="query must"):
+            retrieve_evidence(db, **arguments)
+        assert db.queries == []
+        assert embedder.embedded == []
+
+
+@pytest.mark.parametrize(("source", "query"), [
+    ("Café guidance", "Cafe\u0301"),
+    ("Cafe\u0301 guidance", "CAFÉ"),
+])
+def test_canonically_equivalent_unicode_matches_without_changing_source(source, query):
+    embedder = RecordingEmbedder()
+    db = Db([row(1, source), row(2, "Unrelated hours")])
+    result = retrieve_evidence(
+        db, org_id=ORG, as_of=date(2026, 11, 4), query=query,
+        category=None, corpus_version=3, embedder=embedder,
+    )
+    assert result[0].passage_id == UUID(int=1)
+    assert result[0].fusion.lexical_rank == 1
+    assert result[0].text == source
+    assert tokenize(source)[0] == tokenize(query)[0] == "café"
+    assert embedder.embedded == [normalize_search_query(query)]

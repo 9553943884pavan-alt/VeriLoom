@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+from dataclasses import replace
 import json
 from uuid import UUID
 
+import pytest
+
 from app.jobs.handlers.review_revision import ReviewFailure, review_revision
-from app.jobs.handlers.review_revision import _queries
+from app.jobs.handlers.review_revision import _queries, _retrieve, _retrieve_with_provenance
 from app.schemas.drafts import DecisionRequest
 from app.services import reviews
 from app.rag.retrieval.fusion import FusedCandidate
-from app.rag.retrieval.hybrid import EvidencePassage
+from app.rag.retrieval.hybrid import EvidencePassage, normalize_search_query, query_within_bounds
 
 ORG = UUID("11111111-1111-4111-8111-111111111111")
 REVIEW = UUID("22222222-2222-4222-8222-222222222222")
@@ -39,7 +42,8 @@ class Result:
 
 
 class FakeDB:
-    def __init__(self):
+    def __init__(self, draft="Try our best coffee"):
+        self.draft = draft
         self.calls = []
         self.commits = 0
         self.rollbacks = 0
@@ -51,7 +55,7 @@ class FakeDB:
         if "SELECT r.id AS review_id" in sql and "FOR UPDATE OF r" in sql:
             return Result({"review_id": REVIEW, "revision_id": REVISION, "state": "queued",
                            "reviewed_against_corpus_version": None, "evidence_as_of_date": None,
-                           "content_nfc": "Try our best coffee", "channel": "social_post",
+                           "content_nfc": self.draft, "channel": "social_post",
                            "actual_revision_id": REVISION, "corpus_version": 7,
                            "timezone": "Asia/Calcutta"})
         if "SELECT corpus_version FROM organisations" in sql:
@@ -182,6 +186,171 @@ def test_query_planner_obeys_e5_token_bound_and_flags_omitted_segments():
     assert len(queries) == 8
     assert all(Embedder().count_tokens("query: " + query) <= 512 for query in queries)
     assert "claim13" not in " ".join(queries)
+
+
+class WordEmbedder(Embedder):
+    def count_tokens(self, full_input):
+        return len(full_input.split()) + 2
+
+
+@pytest.mark.parametrize("draft", [
+    " " * 4100 + "Cardamom Chai contains 120 calories per cup.",
+    "Cardamom" + " \t\n" * 1800 + "Chai contains 120 calories.",
+    "हिंदी café e\u0301", "a" * 4100, "word " * 1200,
+])
+def test_query_planner_uses_shared_bounds_on_normalized_search_text(draft):
+    queries, truncated = _queries(draft, WordEmbedder())
+
+    assert truncated is False
+    assert queries
+    assert all(query_within_bounds(query, WordEmbedder()) for query in queries)
+    assert "".join(queries).replace(" ", "") == normalize_search_query(draft).replace(" ", "")
+
+
+def test_long_query_planner_preserves_unpunctuated_line_boundaries():
+    lines = ["alpha " * 60, "beta " * 60]
+    queries, truncated = _queries("\n".join(lines), Embedder())
+
+    assert queries == [normalize_search_query(line) for line in lines]
+    assert truncated is False
+
+
+@pytest.mark.parametrize("query_count", [3, 8])
+def test_all_queries_execute_before_bounded_selection_and_tail_evidence_is_retained(monkeypatch, query_count):
+    import app.jobs.handlers.review_revision as handler
+
+    draft = " ".join(f"claim{i} " + "x" * 450 + "." for i in range(query_count))
+    queries, _ = _queries(draft, Embedder())
+    calls = []
+    first_results = [replace(evidence()[0], passage_id=UUID(int=index)) for index in range(1, 9)]
+    tail = replace(evidence()[0], passage_id=UUID(int=20))
+
+    def retrieve(*args, **kwargs):
+        calls.append(kwargs["query"])
+        assert kwargs["top_k"] == 8
+        return [tail] if kwargs["query"] == queries[-1] else first_results
+
+    monkeypatch.setattr(handler, "retrieve_evidence", retrieve)
+    selected, scores, incomplete = _retrieve_with_provenance(
+        None, org_id=ORG, corpus_version=7, as_of=date(2026, 11, 4),
+        draft=draft, embedder=Embedder(),
+    )
+
+    assert calls == queries
+    assert len(selected) == len({item.passage_id for item in selected}) == 8
+    assert selected[:2] == [first_results[0], tail]
+    assert incomplete is False
+    assert scores[tail.passage_id]["query_matches"] == [{
+        "query_index": query_count, "query_text": queries[-1], "result_rank": 1,
+        "rrf_score": 0.03, "dense_rank": 1, "lexical_rank": 1,
+    }]
+    assert [match["query_index"] for match in scores[first_results[0].passage_id]["query_matches"]] == list(range(1, query_count))
+    # Diagnostic and evaluation scripts continue to consume the original pair.
+    compatible_passages, compatible_incomplete = _retrieve(
+        None, org_id=ORG, corpus_version=7, as_of=date(2026, 11, 4),
+        draft=draft, embedder=Embedder(),
+    )
+    assert (compatible_passages, compatible_incomplete) == (selected, incomplete)
+
+
+class CoverageChat:
+    model = "offline-model"
+
+    def __init__(self, db, *, coverage="sufficient", findings=None):
+        self.db = db
+        self.coverage = coverage
+        self.findings = findings or []
+        self.user_data = None
+
+    def complete_json(self, messages, **kwargs):
+        assert self.db.commits == 1
+        self.user_data = json.loads(messages[-1]["content"])
+        return {"coverage": self.coverage,
+                "coverage_reason": None if self.coverage == "sufficient" else "Human verification required.",
+                "findings": self.findings}
+
+
+@pytest.mark.parametrize("missing_query", [False, True])
+def test_unprocessed_or_evidence_free_segments_cannot_publish_sufficient_coverage(monkeypatch, missing_query):
+    import app.jobs.handlers.review_revision as handler
+
+    segment_count = 3 if missing_query else 10
+    draft = " ".join(f"claim{i} " + "x" * 450 + "." for i in range(segment_count))
+    queries, _ = _queries(draft, Embedder())
+    db = FakeDB(draft)
+    chat = CoverageChat(db)
+    calls = []
+
+    def retrieve(*args, **kwargs):
+        calls.append(kwargs["query"])
+        return [] if missing_query and kwargs["query"] == queries[-1] else evidence()
+
+    monkeypatch.setattr(handler, "retrieve_evidence", retrieve)
+    review_revision(db, org_id=ORG, review_id=REVIEW, embedder=Embedder(), chat=chat,
+                    today=date(2026, 11, 4))
+
+    assert calls == queries
+    published = next(params for sql, params in db.calls if "coverage=:coverage" in sql)
+    assert published["coverage"] == "partial"
+    assert "omitted from retrieval or has no selected evidence" in published["coverage_reason"]
+    scores = json.loads(next(params["scores"] for sql, params in db.calls if "INSERT INTO review_evidence" in sql))
+    assert scores["query_truncated"] is (not missing_query)
+    assert scores["uncovered_query_indexes"] == ([3] if missing_query else [])
+    assert scores["query_count"] == len(queries)
+    assert chat.user_data["draft_text"] == draft
+
+
+@pytest.mark.parametrize("coverage, expected", [("sufficient", "partial"), ("partial", "partial"),
+                                                 ("insufficient", "insufficient")])
+def test_unsupported_claims_preclude_sufficient_coverage_and_never_promote_coverage(monkeypatch, coverage, expected):
+    import app.jobs.handlers.review_revision as handler
+
+    db = FakeDB()
+    chat = CoverageChat(db, coverage=coverage, findings=[{
+        "category": "promotional_claim", "severity": "high", "evidence_status": "insufficient",
+        "quote": "best", "explanation": "A human must verify this claim.", "suggested_edit": None,
+        "evidence": [],
+    }])
+    monkeypatch.setattr(handler, "retrieve_evidence", lambda *args, **kwargs: evidence())
+    review_revision(db, org_id=ORG, review_id=REVIEW, embedder=Embedder(), chat=chat,
+                    today=date(2026, 11, 4))
+
+    published = next(params for sql, params in db.calls if "coverage=:coverage" in sql)
+    assert published["coverage"] == expected
+    assert published["coverage_reason"]
+    assert not any("INSERT INTO finding_citations" in sql for sql, _ in db.calls)
+
+
+def test_search_normalization_preserves_immutable_prompt_text_and_codepoint_anchors(monkeypatch):
+    import app.jobs.handlers.review_revision as handler
+
+    draft = " \n" * 2100 + "हिंदी café best coffee"
+    db = FakeDB(draft)
+    chat = Chat(db)
+    search_queries = []
+    prompt_drafts = []
+    complete = chat.complete_json
+
+    def capture(messages, **kwargs):
+        prompt_drafts.append(json.loads(messages[-1]["content"])["draft_text"])
+        return complete(messages, **kwargs)
+
+    def retrieve(*args, **kwargs):
+        search_queries.append(kwargs["query"])
+        return evidence()
+
+    chat.complete_json = capture
+    monkeypatch.setattr(handler, "retrieve_evidence", retrieve)
+    review_revision(db, org_id=ORG, review_id=REVIEW, embedder=WordEmbedder(), chat=chat,
+                    today=date(2026, 11, 4))
+
+    assert search_queries == ["हिंदी café best coffee"]
+    assert prompt_drafts == [draft]
+    finding = next(params for sql, params in db.calls if "INSERT INTO findings" in sql)
+    assert finding["anchor_start"] == draft.index("best")
+    assert draft[finding["anchor_start"]:finding["anchor_end"]] == "best"
+    scores = json.loads(next(params["scores"] for sql, params in db.calls if "INSERT INTO review_evidence" in sql))
+    assert scores["query_matches"][0]["query_text"] == search_queries[0]
 
 
 def test_decision_idempotency_payload_encodes_datetime(monkeypatch):

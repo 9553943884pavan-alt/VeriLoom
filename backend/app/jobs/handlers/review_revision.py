@@ -17,7 +17,13 @@ from sqlalchemy.orm import Session
 from app.integrations.failover import SarvamFirstChat, build_worker_chat, completed_provenance
 from app.integrations.openai_compatible import OpenAICompatibleError
 from app.integrations.sarvam import SarvamChat
-from app.rag.retrieval.hybrid import CorpusChanged, EvidencePassage, retrieve_evidence
+from app.rag.retrieval.hybrid import (
+    CorpusChanged,
+    EvidencePassage,
+    normalize_search_query,
+    query_within_bounds,
+    retrieve_evidence,
+)
 from app.rag.review_validation import ValidatedReview, validate_review
 
 PROMPT_VERSION = "initial_review/2.0.0"
@@ -101,17 +107,22 @@ class ReviewFailure(RuntimeError):
 
 
 def _queries(draft: str, embedder: QueryEmbedder) -> tuple[list[str], bool]:
-    """Pack draft sentences into E5-sized query inputs without silent truncation."""
-    def count(value: str) -> int:
-        return embedder.count_tokens("query: " + value)
+    """Pack normalized search text within shared character and E5 token bounds."""
+    search_text = normalize_search_query(draft)
 
-    if count(draft) <= 512:
-        return [draft], False
+    def fits(value: str) -> bool:
+        return query_within_bounds(value, embedder)
 
-    sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+|\n+", draft) if part.strip()]
+    if fits(search_text):
+        return [search_text], False
+
+    # Keep original line boundaries when planning; only search inputs collapse
+    # their whitespace. The immutable draft remains the prompt/anchor authority.
+    sentences = [normalize_search_query(part)
+                 for part in re.split(r"(?<=[.!?])\s+|\n+", draft) if part.strip()]
     units: list[str] = []
-    for sentence in sentences or [draft]:
-        if count(sentence) <= 512:
+    for sentence in sentences or [search_text]:
+        if fits(sentence):
             units.append(sentence)
             continue
         # Break oversized sentences by words, then by code point for a single
@@ -120,13 +131,13 @@ def _queries(draft: str, embedder: QueryEmbedder) -> tuple[list[str], bool]:
         current = ""
         for word in words or [sentence]:
             candidate = f"{current} {word}".strip()
-            if count(candidate) <= 512:
+            if fits(candidate):
                 current = candidate
                 continue
             if current:
                 units.append(current)
                 current = ""
-            if count(word) <= 512:
+            if fits(word):
                 current = word
                 continue
             start = 0
@@ -135,7 +146,7 @@ def _queries(draft: str, embedder: QueryEmbedder) -> tuple[list[str], bool]:
                 best = start
                 while low <= high:
                     middle = (low + high) // 2
-                    if count(word[start:middle]) <= 512:
+                    if fits(word[start:middle]):
                         best = middle
                         low = middle + 1
                     else:
@@ -151,7 +162,7 @@ def _queries(draft: str, embedder: QueryEmbedder) -> tuple[list[str], bool]:
     current = ""
     for unit in units:
         candidate = f"{current} {unit}".strip()
-        if current and count(candidate) > 512:
+        if current and not fits(candidate):
             chunks.append(current)
             current = unit
         else:
@@ -173,23 +184,58 @@ def _as_of(row: Mapping[str, Any], today: date | None) -> date:
 
 def _retrieve(db: Session, *, org_id: UUID, corpus_version: int, as_of: date,
               draft: str, embedder: QueryEmbedder) -> tuple[list[EvidencePassage], bool]:
-    selected: dict[UUID, EvidencePassage] = {}
+    """Keep the diagnostic/evaluation entry point compatible with the worker."""
+    passages, _, incomplete = _retrieve_with_provenance(
+        db, org_id=org_id, corpus_version=corpus_version, as_of=as_of,
+        draft=draft, embedder=embedder,
+    )
+    return passages, incomplete
+
+
+def _retrieve_with_provenance(db: Session, *, org_id: UUID, corpus_version: int, as_of: date,
+              draft: str, embedder: QueryEmbedder
+              ) -> tuple[list[EvidencePassage], dict[UUID, dict[str, Any]], bool]:
     queries, query_truncated = _queries(draft, embedder)
-    for query in queries:
-        try:
-            results = retrieve_evidence(
-                db, org_id=org_id, as_of=as_of, query=query, category=None,
-                corpus_version=corpus_version, embedder=embedder, top_k=MAX_PASSAGES,
-            )
-        except CorpusChanged:
-            raise
-        for passage in results:
-            selected.setdefault(passage.passage_id, passage)
+    # Finish the bounded search plan before spending the shared evidence budget.
+    results_by_query = [retrieve_evidence(
+        db, org_id=org_id, as_of=as_of, query=query, category=None,
+        corpus_version=corpus_version, embedder=embedder, top_k=MAX_PASSAGES,
+    ) for query in queries]
+    selected: dict[UUID, EvidencePassage] = {}
+    # Reserve each segment's leading evidence, then fill in existing rank order.
+    # A full first result list must not crowd later draft segments out entirely.
+    for result_index in range(MAX_PASSAGES):
+        for results in results_by_query:
+            if result_index < len(results):
+                passage = results[result_index]
+                selected.setdefault(passage.passage_id, passage)
             if len(selected) >= MAX_PASSAGES:
                 break
         if len(selected) >= MAX_PASSAGES:
             break
-    return list(selected.values()), query_truncated
+
+    matches: dict[UUID, list[dict[str, Any]]] = {passage_id: [] for passage_id in selected}
+    uncovered_queries: list[int] = []
+    for query_index, (query, results) in enumerate(zip(queries, results_by_query), 1):
+        if not any(passage.passage_id in selected for passage in results):
+            uncovered_queries.append(query_index)
+        for result_rank, passage in enumerate(results, 1):
+            if passage.passage_id in matches:
+                matches[passage.passage_id].append({
+                    "query_index": query_index, "query_text": query, "result_rank": result_rank,
+                    "rrf_score": passage.fusion.score, "dense_rank": passage.fusion.dense_rank,
+                    "lexical_rank": passage.fusion.lexical_rank,
+                })
+    scores = {
+        passage_id: {
+            "rrf_score": passage.fusion.score, "dense_rank": passage.fusion.dense_rank,
+            "lexical_rank": passage.fusion.lexical_rank, "query_matches": matches[passage_id],
+            "query_count": len(queries), "query_truncated": query_truncated,
+            "uncovered_query_indexes": uncovered_queries,
+        }
+        for passage_id, passage in selected.items()
+    }
+    return list(selected.values()), scores, query_truncated or bool(uncovered_queries)
 
 
 def review_revision(db: Session, *, org_id: UUID, review_id: UUID,
@@ -219,12 +265,15 @@ def review_revision(db: Session, *, org_id: UUID, review_id: UUID,
     as_of = review["evidence_as_of_date"] or _as_of(review, today)
 
     snapshot: list[EvidencePassage] | None = None
-    query_truncated = False
+    retrieval_incomplete = False
+    retrieval_scores: dict[UUID, dict[str, Any]] = {}
     corpus_version = int(review["corpus_version"])
     for attempt in range(2):
         try:
-            snapshot, query_truncated = _retrieve(db, org_id=org_id, corpus_version=corpus_version,
-                                                  as_of=as_of, draft=draft, embedder=embedder)
+            snapshot, retrieval_scores, retrieval_incomplete = _retrieve_with_provenance(
+                db, org_id=org_id, corpus_version=corpus_version,
+                as_of=as_of, draft=draft, embedder=embedder,
+            )
             latest = db.execute(text("SELECT corpus_version FROM organisations WHERE id=:org_id"),
                                 {"org_id": org_id}).scalar_one()
             if int(latest) != corpus_version:
@@ -257,8 +306,7 @@ def review_revision(db: Session, *, org_id: UUID, review_id: UUID,
                 VALUES (:org_id,:review_id,:passage_id,:rank,:supplied_text,:source_version,CAST(:scores AS jsonb))
             """), {"org_id": org_id, "review_id": review_id, "passage_id": passage.passage_id,
                    "rank": rank, "supplied_text": passage.text, "source_version": passage.source_version,
-                   "scores": json.dumps({"rrf_score": passage.fusion.score, "dense_rank": passage.fusion.dense_rank,
-                                         "lexical_rank": passage.fusion.lexical_rank})})
+                   "scores": json.dumps(retrieval_scores[passage.passage_id])})
         db.execute(text("""
             UPDATE reviews SET state='processing', reviewed_against_corpus_version=:corpus_version,
                 evidence_as_of_date=:as_of, prompt_version=:prompt_version,
@@ -306,9 +354,14 @@ def review_revision(db: Session, *, org_id: UUID, review_id: UUID,
             raise ReviewFailure("review_provider_error" if retryable else "review_validation_error",
                                 retryable=retryable) from exc
 
-    if query_truncated and validated.coverage == "sufficient":
-        validated = replace(validated, coverage="partial",
-                            coverage_reason="Only part of this long draft was included in retrieval queries; a human should check the remaining text.")
+    missing_support = any(item.candidate.evidence_status == "insufficient" for item in validated.findings)
+    if validated.coverage != "insufficient" and (retrieval_incomplete or missing_support):
+        reasons = []
+        if retrieval_incomplete:
+            reasons.append("Some draft text was omitted from retrieval or has no selected evidence; a human should check it.")
+        if missing_support:
+            reasons.append("Some draft claims lack supporting guidance and need human verification.")
+        validated = replace(validated, coverage="partial", coverage_reason=" ".join(reasons))
 
     _publish(db, org_id=org_id, review_id=review_id, revision_id=review["revision_id"],
              draft=draft, snapshot=snapshot, validated=validated,

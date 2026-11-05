@@ -132,6 +132,51 @@ def test_no_current_evidence_abstains_without_provider(monkeypatch):
     assert next(p for sql, p in db.calls if "answer_status=:answer_status" in sql)["answer_status"] == "insufficient_evidence"
 
 
+def test_new_topic_does_not_reuse_selected_finding_evidence(monkeypatch):
+    import app.jobs.handlers.answer_question as handler
+
+    finding_id = UUID("88888888-8888-4888-8888-888888888888")
+
+    class FindingDB(FakeDB):
+        def execute(self, statement, params):
+            sql = str(statement)
+            if "SELECT t.id,t.review_id" in sql:
+                result = super().execute(statement, params)
+                result.row["finding_id"] = finding_id
+                result.row["question"] = "What source confirms the refund policy?"
+                return result
+            if "SELECT quote,explanation FROM findings" in sql:
+                self.calls.append((sql, params))
+                return Result(row={"quote": "best", "explanation": "Do not say best."})
+            if "SELECT count(*) FROM finding_citations" in sql:
+                self.calls.append((sql, params))
+                return Result(scalar=1)
+            return super().execute(statement, params)
+
+    db = FindingDB()
+    chat = Chat(db)
+    monkeypatch.setattr(handler, "_current_finding_evidence", lambda *_args, **_kwargs: [{
+        "passage_id": PASSAGE, "source_ref": "SRC#1", "source_id": SOURCE,
+        "version_id": VERSION, "source_version": "1.0", "title": "Voice",
+        "text": "Do not say best.", "effective_from": date(2026, 1, 1),
+    }])
+    searches = []
+
+    def no_refund_guidance(_db, **kwargs):
+        searches.append(kwargs["query"])
+        return []
+
+    monkeypatch.setattr(handler, "retrieve_evidence", no_refund_guidance)
+    answer_question(db, org_id=ORG, turn_id=TURN, embedder=Embedder(), chat=chat,
+                    today=date(2026, 11, 4))
+    assert searches == ["What source confirms the refund policy?"]
+    assert chat.calls == 0
+    assert not any("INSERT INTO chat_evidence" in sql for sql, _ in db.calls)
+    published = next(p for sql, p in db.calls if "answer_status=:answer_status" in sql)
+    assert published["route"] == "abstain"
+    assert published["answer_status"] == "insufficient_evidence"
+
+
 def test_inexact_citation_rejected_before_publication(monkeypatch):
     import app.jobs.handlers.answer_question as handler
 

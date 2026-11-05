@@ -12,7 +12,11 @@ from rank_bm25 import BM25Plus
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.rag.embeddings import MAX_INPUT_TOKENS, QUERY_PREFIX
 from app.rag.retrieval.fusion import FusedCandidate, fuse_rankings
+
+MAX_QUERY_CHARACTERS = 4000
+MAX_QUERY_TOKENS = MAX_INPUT_TOKENS
 
 
 _ELIGIBLE = """
@@ -31,6 +35,8 @@ _ELIGIBLE = """
 
 class QueryEmbedder(Protocol):
     model_id: str
+
+    def count_tokens(self, full_input: str) -> int: ...
 
     def embed_query(self, query: str) -> list[float]: ...
 
@@ -54,11 +60,26 @@ class EvidencePassage:
     fusion: FusedCandidate
 
 
+def normalize_search_query(value: str) -> str:
+    """Normalize only search input; source text and citation anchors stay exact."""
+    if not isinstance(value, str):
+        raise ValueError("query must be a string")
+    return unicodedata.normalize("NFC", " ".join(value.split()))
+
+
+def query_within_bounds(value: str, embedder: QueryEmbedder) -> bool:
+    """Check normalized query text against character and full E5 token budgets."""
+    return (
+        1 <= len(value) <= MAX_QUERY_CHARACTERS
+        and embedder.count_tokens(QUERY_PREFIX + value) <= MAX_QUERY_TOKENS
+    )
+
+
 def tokenize(text_value: str) -> list[str]:
     """Use identical Unicode lexical tokenization for guidance and queries."""
     words: list[str] = []
     current: list[str] = []
-    for character in text_value.casefold():
+    for character in unicodedata.normalize("NFC", text_value.casefold()):
         if character == "_" or unicodedata.category(character)[0] in {"L", "N", "M"}:
             current.append(character)
         elif current:
@@ -105,8 +126,9 @@ def retrieve_evidence(
     transaction. A changed version raises so the caller can restart selection and
     save one coherent evidence snapshot before sending it to the LLM.
     """
-    if not isinstance(query, str) or not query.strip() or len(query) > 4000:
-        raise ValueError("query must contain 1 to 4000 characters")
+    query = normalize_search_query(query)
+    if not query_within_bounds(query, embedder):
+        raise ValueError("query must contain 1 to 4000 characters and at most 512 model tokens")
     if top_k < 1 or top_k > 8:
         raise ValueError("top_k must be between 1 and 8")
     if corpus_version < 0:
@@ -114,7 +136,7 @@ def retrieve_evidence(
     if _corpus_version(db, org_id) != corpus_version:
         raise CorpusChanged("approved corpus changed before retrieval")
 
-    embedding = _vector_literal(embedder.embed_query(query.strip()))
+    embedding = _vector_literal(embedder.embed_query(query))
     params = {
         "org_id": org_id, "as_of": as_of, "category": category,
         "model_id": embedder.model_id, "embedding": embedding, "limit": 20,
